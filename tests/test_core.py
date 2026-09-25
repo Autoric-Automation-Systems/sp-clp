@@ -25,6 +25,31 @@ def test_fake_client_produces_readings():
     assert first.bits["COUNTER"] is True
 
 
+def test_snap7_read_requests_full_standard_contract(monkeypatch):
+    captured = {}
+
+    class FakeSnap7Client:
+        def connect(self, ip, rack, slot):
+            captured["connection"] = (ip, rack, slot)
+
+        def db_read(self, db_number, start, size):
+            captured["read"] = (db_number, start, size)
+            return bytes([3, 0, 1, 0, 0, 0, 0, 7])
+
+        def disconnect(self):
+            captured["disconnected"] = True
+
+    import snap7
+    monkeypatch.setattr(snap7.client, "Client", FakeSnap7Client)
+    from app.plc import Snap7PLCClient
+
+    reading = Snap7PLCClient("192.168.0.1").read(53)
+    assert captured["connection"] == ("192.168.0.1", 0, 1)
+    assert captured["read"] == (53, 0, 8)
+    assert captured["disconnected"] is True
+    assert reading.count == 7
+
+
 def test_password_hash_is_not_plaintext():
     encoded = hash_password("senha-segura")
     assert encoded != "senha-segura"

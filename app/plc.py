@@ -65,6 +65,6 @@ class Snap7PLCClient:
         client = snap7.client.Client()
         try:
             client.connect(self.ip, self.rack, self.slot)
-            return parse_db(bytes(client.db_read(db_number, 0, 6)))
+            return parse_db(bytes(client.db_read(db_number, 0, 8)))
         finally:
             client.disconnect()
