@@ -1,0 +1,83 @@
+from datetime import datetime, timezone
+
+from app.plc import FakePLCClient, parse_db
+from app.security import hash_password, verify_password
+from app.storage import Storage
+from fastapi.testclient import TestClient
+
+from app.main import app, storage as app_storage
+
+
+def test_parse_standard_layout():
+    data = bytes([0b00000111, 0b10000001, 0b00000001, 0, 0, 0, 0, 42])
+    reading = parse_db(data)
+    assert reading.bits["AUTO"] is True
+    assert reading.bits["RUN"] is True
+    assert reading.bits["FAULT"] is True
+    assert reading.bits["COUNTER"] is True
+    assert reading.count == 42
+
+
+def test_fake_client_produces_readings():
+    first = FakePLCClient(count=10).read(32)
+    assert first.count == 10
+    assert first.bits["AUTO"] is True
+    assert first.bits["COUNTER"] is True
+
+
+def test_password_hash_is_not_plaintext():
+    encoded = hash_password("senha-segura")
+    assert encoded != "senha-segura"
+    assert verify_password("senha-segura", encoded)
+    assert not verify_password("errada", encoded)
+
+
+def test_counter_reset_does_not_create_negative_delta(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.add_area("Planta", "Area")
+    machine_id = storage.add_machine(1, "M1", "fake", 32, "UTC")
+    now = datetime(2026, 1, 1, 10, 10, tzinfo=timezone.utc)
+    assert storage.save_sample(machine_id, 100, now) == 0
+    assert storage.save_sample(machine_id, 130, now.replace(minute=20)) == 30
+    assert storage.save_sample(machine_id, 5, now.replace(minute=30)) == 0
+    assert storage.save_sample(machine_id, 8, now.replace(minute=40)) == 3
+    assert storage.hourly_counts(machine_id)[0]["quantity"] == 33
+
+
+def test_area_lookup_uses_area_table(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    area_id = storage.add_area("Planta", "Area")
+    assert storage.get_area(area_id)["name"] == "Area"
+    assert storage.get_area(999) is None
+
+
+def test_machine_can_be_updated(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    area_id = storage.add_area("Planta", "Area")
+    machine_id = storage.add_machine(area_id, "M1", "fake", 32, "UTC")
+    assert storage.update_machine(machine_id, "M1 Atualizada", "192.168.0.10", 40, "America/Sao_Paulo")
+    machine = storage.get_machine(machine_id)
+    assert machine["name"] == "M1 Atualizada"
+    assert machine["ip"] == "192.168.0.10"
+    assert machine["db_number"] == 40
+
+
+def test_machine_delete_removes_machine_history(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    area_id = storage.add_area("Planta", "Area")
+    machine_id = storage.add_machine(area_id, "M1", "fake", 32, "UTC")
+    storage.save_sample(machine_id, 10)
+    assert storage.delete_machine(machine_id)
+    assert storage.get_machine(machine_id) is None
+    assert storage.hourly_counts(machine_id) == []
+    assert not storage.delete_machine(machine_id)
+
+
+def test_unreachable_plc_is_reported_as_disconnected():
+    area_id = app_storage.add_area("Test Plant", "Test Area")
+    machine_id = app_storage.add_machine(area_id, "Unreachable", "192.0.2.1", 32, "UTC")
+    client = TestClient(app)
+    response = client.get(f"/api/machines/{machine_id}/status")
+    assert response.status_code == 200
+    assert response.json()["connected"] is False
+    app_storage.delete_machine(machine_id)

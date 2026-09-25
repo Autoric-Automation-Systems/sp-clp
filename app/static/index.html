@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SP-CLP | Monitoramento</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>.secondary{background:transparent;color:var(--ink)}.area-item{border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px}.machine-list-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0 8px 16px;font:13px Arial,sans-serif;color:var(--muted)}.machine-actions{display:flex;gap:6px}.machine-list-item button{padding:6px 10px;font-size:12px}.danger{background:#a93627;border-color:#a93627}</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">S7</span><div><span class="eyebrow">MONITORAMENTO INDUSTRIAL</span><h1>SP-CLP</h1></div></div>
+    <div class="topbar-tools"><span id="session-state" class="session-state">Visitante</span><nav><button class="nav-button active" data-page="dashboard">Dashboard</button><button class="nav-button" data-page="settings">Configurações</button></nav></div>
+  </header>
+  <main>
+    <section id="dashboard-page" class="page">
+      <section class="intro"><div><p class="eyebrow">PÁGINA ATUAL / DASHBOARD</p><h2>Visão da produção</h2></div><span id="refresh-state">Aguardando máquinas...</span></section>
+      <section id="machines" class="machine-grid"></section><section id="empty" class="empty">Nenhuma máquina configurada ainda.</section>
+    </section>
+    <section id="settings-page" class="page" hidden>
+      <section class="intro"><div><p class="eyebrow">PÁGINA ATUAL / CONFIGURAÇÕES</p><h2>Estrutura da planta</h2></div><span class="private-label">Área protegida</span></section>
+      <section id="settings-locked" class="notice"><strong>Faça login para alterar configurações.</strong><button id="login-open-button">Entrar</button></section>
+      <section id="settings-content" hidden>
+        <div class="config-grid">
+          <form id="area-form" class="panel"><p class="eyebrow">NOVA ÁREA</p><h3>Adicionar área</h3><label>Planta<input id="plant-name" required maxlength="120"></label><label>Área<input id="area-name" required maxlength="120"></label><button>Salvar área</button><p id="area-message" class="form-message"></p></form>
+          <form id="machine-form" class="panel"><p id="machine-form-eyebrow" class="eyebrow">NOVA MÁQUINA</p><h3 id="machine-form-title">Adicionar máquina</h3><label>Área<select id="area-select" required></select></label><label>Nome<input id="machine-name" required maxlength="120"></label><label>IP do CLP<input id="machine-ip" placeholder="Ex.: 192.168.0.10" required></label><label>DB<input id="machine-db" type="number" min="1" max="65535" required></label><label>Fuso horário<input id="machine-timezone" value="America/Sao_Paulo" required></label><p class="form-hint">Rack 0 e Slot 1 são aplicados automaticamente.</p><button id="machine-submit">Salvar máquina</button><button type="button" id="machine-cancel" class="secondary" hidden>Cancelar edição</button><p id="machine-message" class="form-message"></p></form>
+        </div>
+        <div class="panel config-list"><p class="eyebrow">CADASTRO ATUAL</p><h3>Áreas e máquinas cadastradas</h3><div id="area-list"></div></div>
+      </section>
+    </section>
+  </main>
+  <footer><span>SP-CLP · Monitoramento local</span><span id="footer-connection">Servidor local ativo</span></footer>
+  <dialog id="settings-dialog"><form method="dialog" id="settings-form"><button class="close" value="cancel">×</button><p class="eyebrow">ACESSO RESTRITO</p><h2>Autenticação</h2><div id="setup-fields"><label>Crie a senha inicial<input id="setup-password" type="password" minlength="8"></label><button type="button" id="setup-button">Criar senha</button></div><div id="login-fields" hidden><label>Senha<input id="login-password" type="password"></label><button type="button" id="login-button">Entrar</button></div><p id="settings-message" role="status"></p></form></dialog>
+  <script src="/static/app.js"></script>
+</body>
+</html>

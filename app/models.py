@@ -1,0 +1,46 @@
+from pydantic import BaseModel, Field
+
+
+class SetupPassword(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    password: str
+
+
+class MachineInput(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    ip: str = Field(min_length=1, max_length=255)
+    db_number: int = Field(ge=1, le=65535)
+    timezone: str = "UTC"
+
+
+class Machine(MachineInput):
+    id: int
+    area_id: int
+    rack: int = 0
+    slot: int = 1
+
+
+class AreaInput(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    plant_name: str = Field(min_length=1, max_length=120)
+
+
+class SignalValue(BaseModel):
+    name: str
+    address: str
+    value: bool
+
+
+class MachineStatus(BaseModel):
+    machine_id: int
+    connected: bool
+    stale: bool
+    timestamp: str | None
+    auto: bool | None
+    run: bool | None
+    fault: bool | None
+    count: int | None
+    signals: list[SignalValue]
