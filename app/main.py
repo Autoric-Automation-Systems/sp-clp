@@ -18,6 +18,7 @@ app = FastAPI(title="SP-CLP Dashboard", version="0.1.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 storage = Storage()
 sessions: set[str] = set()
+plc_clients: dict[tuple[str, int, int], PLCClient] = {}
 
 
 def require_admin(authorization: str | None = Header(default=None)) -> None:
@@ -26,9 +27,13 @@ def require_admin(authorization: str | None = Header(default=None)) -> None:
 
 
 def client_for(machine) -> PLCClient:
-    if machine["ip"].lower() in {"fake", "simulator", "simulador"}:
-        return FakePLCClient()
-    return Snap7PLCClient(machine["ip"], machine["rack"], machine["slot"])
+    ip = machine["ip"].lower()
+    key = (machine["ip"], machine["rack"], machine["slot"])
+    if ip in {"fake", "simulator", "simulador"}:
+        plc_clients.setdefault(key, FakePLCClient())
+        return plc_clients[key]
+    plc_clients.setdefault(key, Snap7PLCClient(machine["ip"], machine["rack"], machine["slot"]))
+    return plc_clients[key]
 
 
 @app.get("/", response_class=FileResponse)

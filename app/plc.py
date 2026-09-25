@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import struct
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
@@ -59,12 +60,29 @@ class FakePLCClient:
 class Snap7PLCClient:
     def __init__(self, ip: str, rack: int = 0, slot: int = 1) -> None:
         self.ip, self.rack, self.slot = ip, rack, slot
+        self._client = None
+        self._lock = threading.Lock()
 
-    def read(self, db_number: int) -> PLCReading:
+    def _connect(self):
         import snap7
         client = snap7.client.Client()
-        try:
-            client.connect(self.ip, self.rack, self.slot)
-            return parse_db(bytes(client.db_read(db_number, 0, 8)))
-        finally:
-            client.disconnect()
+        client.connect(self.ip, self.rack, self.slot)
+        self._client = client
+        return client
+
+    def close(self) -> None:
+        with self._lock:
+            if self._client is not None:
+                self._client.disconnect()
+                self._client = None
+
+    def read(self, db_number: int) -> PLCReading:
+        with self._lock:
+            try:
+                client = self._client or self._connect()
+                return parse_db(bytes(client.db_read(db_number, 0, 8)))
+            except Exception:
+                if self._client is not None:
+                    self._client.disconnect()
+                    self._client = None
+                raise

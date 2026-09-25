@@ -46,6 +46,9 @@ def test_snap7_read_requests_full_standard_contract(monkeypatch):
     reading = Snap7PLCClient("192.168.0.1").read(53)
     assert captured["connection"] == ("192.168.0.1", 0, 1)
     assert captured["read"] == (53, 0, 8)
+    client = Snap7PLCClient("192.168.0.1")
+    client.read(53)
+    client.close()
     assert captured["disconnected"] is True
     assert reading.count == 7
 
@@ -70,6 +73,30 @@ def test_machine_status_maps_signal_names_without_name_error(monkeypatch):
     assert status.signals[0].name == "AUTO"
     assert status.signals[0].address == "0.0"
     app_storage.delete_machine(machine_id)
+
+
+def test_snap7_client_reuses_connection_for_multiple_dbs(monkeypatch):
+    connections = []
+
+    class FakeSnap7Client:
+        def connect(self, ip, rack, slot):
+            connections.append((ip, rack, slot))
+
+        def db_read(self, db_number, start, size):
+            return bytes([3, 0, 1, 0, 0, 0, 0, db_number])
+
+        def disconnect(self):
+            pass
+
+    import snap7
+    monkeypatch.setattr(snap7.client, "Client", FakeSnap7Client)
+    from app.plc import Snap7PLCClient
+
+    client = Snap7PLCClient("192.168.0.1")
+    assert client.read(53).count == 53
+    assert client.read(54).count == 54
+    assert connections == [("192.168.0.1", 0, 1)]
+    client.close()
 
 
 def test_password_hash_is_not_plaintext():
