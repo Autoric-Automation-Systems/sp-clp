@@ -50,6 +50,28 @@ def test_snap7_read_requests_full_standard_contract(monkeypatch):
     assert reading.count == 7
 
 
+def test_machine_status_maps_signal_names_without_name_error(monkeypatch):
+    from app.main import machine_status
+    from app.plc import PLCReading
+
+    class FakeClient:
+        def read(self, db_number):
+            return PLCReading(
+                timestamp=datetime.now(timezone.utc),
+                bits={"AUTO": True, "RUN": False, "FAULT": True, "COUNTER": True},
+                count=7,
+            )
+
+    monkeypatch.setattr("app.main.client_for", lambda machine: FakeClient())
+    area_id = app_storage.add_area("Test Plant", "Status Area")
+    machine_id = app_storage.add_machine(area_id, "Status Machine", "fake", 53, "UTC")
+    status = machine_status(machine_id)
+    assert status.connected is True
+    assert status.signals[0].name == "AUTO"
+    assert status.signals[0].address == "0.0"
+    app_storage.delete_machine(machine_id)
+
+
 def test_password_hash_is_not_plaintext():
     encoded = hash_password("senha-segura")
     assert encoded != "senha-segura"

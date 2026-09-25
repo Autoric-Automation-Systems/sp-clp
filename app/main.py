@@ -105,8 +105,8 @@ def machine_status(machine_id: int) -> MachineStatus:
         named = reading.bits
         signals = [
             {"name": name, "address": address, "value": value}
-            for address, value in zip(
-                [f"{byte}.{bit}" for byte in (0, 1) for bit in range(8)], named.values()
+            for address, (name, value) in zip(
+                [f"{byte}.{bit}" for byte in (0, 1) for bit in range(8)] + ["2.0"], named.items()
             )
         ]
         return MachineStatus(
