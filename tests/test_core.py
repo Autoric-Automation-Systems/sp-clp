@@ -176,6 +176,14 @@ def test_dashboard_shell_references_existing_assets():
         assert client.get(asset).status_code == 200, f"{asset} is not served"
 
 
+def test_footer_links_to_repository_and_instagram():
+    page = TestClient(app).get("/")
+    assert page.status_code == 200
+    assert "https://github.com/Autoric-Automation-Systems/sp-clp" in page.text
+    assert "https://www.instagram.com/autoricbr/" in page.text
+    assert "@autoricbr" in page.text
+
+
 def test_snap7_error_bytes_are_decoded_for_logging():
     assert describe_error(RuntimeError(b" TCP : Unreachable peer")) == "TCP : Unreachable peer"
     assert describe_error(ValueError("falha de leitura")) == "falha de leitura"
