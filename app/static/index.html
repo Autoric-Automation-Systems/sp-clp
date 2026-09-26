@@ -8,17 +8,17 @@
   <link rel="apple-touch-icon" href="/static/assets/favicon_io/apple-touch-icon.png">
   <link rel="manifest" href="/static/assets/favicon_io/site.webmanifest">
   <link rel="stylesheet" href="/static/styles.css">
-  <style>.secondary{background:transparent;color:var(--ink)}.area-item{border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px}.machine-list-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0 8px 16px;font:13px Arial,sans-serif;color:var(--muted)}.machine-actions{display:flex;gap:6px}.machine-list-item button{padding:6px 10px;font-size:12px}.danger{background:#a93627;border-color:#a93627}</style>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><img class="brand-icon" src="/static/assets/favicon_io/android-chrome-192x192.png" alt=""><div><span class="eyebrow">MONITORAMENTO INDUSTRIAL</span><h1>SP-CLP</h1></div></div>
-    <div class="topbar-tools"><span id="session-state" class="session-state">Visitante</span><nav><button class="nav-button active" data-page="dashboard">Dashboard</button><button class="nav-button" data-page="settings">Configurações</button></nav></div>
+    <div class="topbar-tools"><span id="session-state" class="session-state">Visitante</span><button id="menu-toggle" class="menu-toggle" aria-expanded="false" aria-controls="main-menu"><span></span><span></span><span></span><b>Menu</b></button></div>
   </header>
+  <aside id="main-menu" class="main-menu" aria-hidden="true"><div class="menu-heading"><span class="eyebrow">NAVEGAÇÃO</span><button id="menu-close" class="menu-close" aria-label="Fechar menu">×</button></div><nav><button class="nav-button active" data-page="dashboard"><span>01</span>Dashboard</button><button class="nav-button" data-page="settings"><span>02</span>Configurações</button></nav><p class="menu-note">Monitoramento local<br>somente leitura</p></aside><div id="menu-backdrop" class="menu-backdrop"></div>
   <main>
     <section id="dashboard-page" class="page">
       <section class="intro"><div><p class="eyebrow">PÁGINA ATUAL / DASHBOARD</p><h2>Visão da produção</h2></div><span id="refresh-state">Aguardando máquinas...</span></section>
-      <section id="machines" class="machine-grid"></section><section id="empty" class="empty">Nenhuma máquina configurada ainda.</section>
+      <section id="machines" class="machine-groups"></section><section id="empty" class="empty">Nenhuma máquina configurada ainda.</section>
     </section>
     <section id="settings-page" class="page" hidden>
       <section class="intro"><div><p class="eyebrow">PÁGINA ATUAL / CONFIGURAÇÕES</p><h2>Estrutura da planta</h2></div><span class="private-label">Área protegida</span></section>

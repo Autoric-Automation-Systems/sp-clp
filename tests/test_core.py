@@ -147,6 +147,15 @@ def test_machine_delete_removes_machine_history(tmp_path):
     assert not storage.delete_machine(machine_id)
 
 
+def test_machine_list_includes_plant_and_area_names(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    area_id = storage.add_area("Planta Norte", "Area Corte")
+    storage.add_machine(area_id, "M1", "fake", 53, "UTC")
+    machine = storage.list_machines()[0]
+    assert machine["plant_name"] == "Planta Norte"
+    assert machine["area_name"] == "Area Corte"
+
+
 def test_unreachable_plc_is_reported_as_disconnected():
     area_id = app_storage.add_area("Test Plant", "Test Area")
     machine_id = app_storage.add_machine(area_id, "Unreachable", "192.0.2.1", 32, "UTC")

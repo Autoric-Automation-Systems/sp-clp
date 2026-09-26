@@ -109,7 +109,11 @@ class Storage:
 
     def list_machines(self) -> list[sqlite3.Row]:
         with self.connect() as connection:
-            return list(connection.execute("SELECT * FROM machines ORDER BY name"))
+            return list(connection.execute(
+                "SELECT machines.*, areas.name AS area_name, areas.plant_name "
+                "FROM machines JOIN areas ON areas.id = machines.area_id "
+                "ORDER BY areas.plant_name, areas.name, machines.name"
+            ))
 
     def get_machine(self, machine_id: int) -> sqlite3.Row | None:
         with self.connect() as connection:
