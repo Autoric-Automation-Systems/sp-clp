@@ -1,6 +1,7 @@
+import logging
 from datetime import datetime, timezone
 
-from app.plc import FakePLCClient, parse_db
+from app.plc import FakePLCClient, describe_error, parse_db
 from app.security import hash_password, verify_password
 from app.storage import Storage
 from fastapi.testclient import TestClient
@@ -173,3 +174,31 @@ def test_dashboard_shell_references_existing_assets():
     for asset in ("/static/app.js", "/static/styles.css"):
         assert asset in page.text, f"{asset} is not referenced by the dashboard page"
         assert client.get(asset).status_code == 200, f"{asset} is not served"
+
+
+def test_snap7_error_bytes_are_decoded_for_logging():
+    assert describe_error(RuntimeError(b" TCP : Unreachable peer")) == "TCP : Unreachable peer"
+    assert describe_error(ValueError("falha de leitura")) == "falha de leitura"
+    assert describe_error(ValueError()) == "ValueError"
+
+
+def test_snap7_library_error_spam_is_silenced(caplog):
+    assert logging.getLogger("snap7").getEffectiveLevel() == logging.CRITICAL
+    with caplog.at_level(logging.DEBUG):
+        logging.getLogger("snap7.common").error(b" TCP : Unreachable peer")
+    assert [r for r in caplog.records if r.name.startswith("snap7")] == []
+
+
+def test_unreachable_plc_failure_is_logged_at_debug_level(caplog):
+    area_id = app_storage.add_area("Test Plant", "Test Area")
+    machine_id = app_storage.add_machine(area_id, "Unreachable", "192.0.2.1", 32, "UTC")
+    client = TestClient(app)
+    with caplog.at_level(logging.DEBUG, logger="sp_clp"):
+        response = client.get(f"/api/machines/{machine_id}/status")
+    assert response.status_code == 200
+    assert response.json()["connected"] is False
+    records = [r for r in caplog.records if r.name == "sp_clp"]
+    assert len(records) == 1, f"expected one diagnostic log, got {len(records)}"
+    assert records[0].levelno == logging.DEBUG
+    assert "192.0.2.1" in records[0].getMessage()
+    app_storage.delete_machine(machine_id)

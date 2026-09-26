@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .models import AreaInput, LoginRequest, MachineInput, MachineStatus, SetupPassword
-from .plc import FakePLCClient, PLCClient, Snap7PLCClient
+from .plc import FakePLCClient, PLCClient, Snap7PLCClient, describe_error
 from .security import hash_password, verify_password
 from .storage import Storage
 
@@ -19,6 +20,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 storage = Storage()
 sessions: set[str] = set()
 plc_clients: dict[tuple[str, int, int], PLCClient] = {}
+logger = logging.getLogger("sp_clp")
 
 
 def require_admin(authorization: str | None = Header(default=None)) -> None:
@@ -120,7 +122,9 @@ def machine_status(machine_id: int) -> MachineStatus:
             run=named.get("RUN"), fault=named.get("FAULT"), count=reading.count,
             signals=signals,
         )
-    except (ConnectionError, OSError, RuntimeError, ValueError, ImportError):
+    except (ConnectionError, OSError, RuntimeError, ValueError, ImportError) as error:
+        # Polled every few seconds per machine, so keep this at debug level.
+        logger.debug("Maquina %s (%s) indisponivel: %s", machine_id, machine["ip"], describe_error(error))
         return MachineStatus(
             machine_id=machine_id, connected=False, stale=True, timestamp=None,
             auto=None, run=None, fault=None, count=None, signals=[],

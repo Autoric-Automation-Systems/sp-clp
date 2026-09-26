@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import struct
 import threading
 from dataclasses import dataclass
@@ -7,10 +8,26 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 
+# python-snap7 calls logger.error() with raw bytes on every failed connect, and the
+# logger has no handler, so Python's lastResort handler dumps b' TCP : Unreachable peer'
+# to stderr. Silence the library and report failures from application code instead.
+logging.getLogger("snap7").setLevel(logging.CRITICAL)
+
 SIGNAL_ADDRESSES = [f"{byte}.{bit}" for byte in (0, 1) for bit in range(8)]
 DEFAULT_SIGNAL_NAMES = {
     "0.0": "AUTO", "0.1": "RUN", "0.2": "FAULT", "2.0": "COUNTER",
 }
+
+
+def describe_error(error: BaseException) -> str:
+    """Return a readable message; snap7 raises RuntimeError with a raw bytes argument."""
+    if not error.args:
+        return error.__class__.__name__
+    detail = error.args[0]
+    if isinstance(detail, bytes):
+        return detail.decode("utf-8", "replace").strip()
+    return str(detail)
+
 
 
 @dataclass(frozen=True)
