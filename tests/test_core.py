@@ -164,3 +164,12 @@ def test_unreachable_plc_is_reported_as_disconnected():
     assert response.status_code == 200
     assert response.json()["connected"] is False
     app_storage.delete_machine(machine_id)
+
+
+def test_dashboard_shell_references_existing_assets():
+    client = TestClient(app)
+    page = client.get("/")
+    assert page.status_code == 200
+    for asset in ("/static/app.js", "/static/styles.css"):
+        assert asset in page.text, f"{asset} is not referenced by the dashboard page"
+        assert client.get(asset).status_code == 200, f"{asset} is not served"
