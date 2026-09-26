@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 from app.models import MachineInput
-from app.plc import FakePLCClient, describe_error, parse_db
+from app.plc import SIGNAL_LAYOUT, FakePLCClient, describe_error, parse_db
 from app.security import hash_password, verify_password
 from app.storage import Storage
 from fastapi.testclient import TestClient
@@ -15,18 +15,26 @@ from app.main import app, storage as app_storage
 def test_parse_standard_layout():
     data = bytes([0b00000111, 0b10000001, 0b00000001, 0, 0, 0, 0, 42])
     reading = parse_db(data)
-    assert reading.bits["AUTO"] is True
-    assert reading.bits["RUN"] is True
-    assert reading.bits["FAULT"] is True
-    assert reading.bits["COUNTER"] is True
+    assert reading.bits["0.0"] is True
+    assert reading.bits["0.1"] is True
+    assert reading.bits["0.2"] is True
+    assert reading.bits["2.0"] is True
+    assert reading.bits["0.3"] is False
     assert reading.count == 42
+
+
+def test_parse_db_reports_every_address_even_with_repeated_labels():
+    """Labels are user editable, so readings are keyed by address and never collapse."""
+    reading = parse_db(bytes(8))
+    assert set(reading.bits) == {spec.address for spec in SIGNAL_LAYOUT}
+    assert len(reading.bits) == len(SIGNAL_LAYOUT)
 
 
 def test_fake_client_produces_readings():
     first = FakePLCClient(count=10).read(32)
     assert first.count == 10
-    assert first.bits["AUTO"] is True
-    assert first.bits["COUNTER"] is True
+    assert first.bits["0.0"] is True
+    assert first.bits["2.0"] is True
 
 
 def test_snap7_read_requests_full_standard_contract(monkeypatch):
@@ -57,25 +65,51 @@ def test_snap7_read_requests_full_standard_contract(monkeypatch):
     assert reading.count == 7
 
 
-def test_machine_status_maps_signal_names_without_name_error(monkeypatch):
+def test_machine_status_reports_every_address_with_labels(monkeypatch):
     from app.main import machine_status
-    from app.plc import PLCReading
+    from app.plc import PLCReading, SIGNAL_LAYOUT
 
     class FakeClient:
         def read(self, db_number):
-            return PLCReading(
-                timestamp=datetime.now(timezone.utc),
-                bits={"AUTO": True, "RUN": False, "FAULT": True, "COUNTER": True},
-                count=7,
-            )
+            bits = {spec.address: False for spec in SIGNAL_LAYOUT}
+            bits["0.0"] = True
+            bits["0.2"] = True
+            bits["2.0"] = True
+            return PLCReading(timestamp=datetime.now(timezone.utc), bits=bits, count=7)
 
     monkeypatch.setattr("app.main.client_for", lambda machine: FakeClient())
     area_id = app_storage.add_area("Test Plant", "Status Area")
     machine_id = app_storage.add_machine(area_id, "Status Machine", "fake", 53, "UTC")
+    app_storage.set_signal_labels(machine_id, {"0.3": "Portao de entrada"})
     status = machine_status(machine_id)
+
     assert status.connected is True
-    assert status.signals[0].name == "AUTO"
-    assert status.signals[0].address == "0.0"
+    assert status.auto is True and status.run is False and status.fault is True
+    assert status.count == 7
+    assert [item.address for item in status.signals] == [spec.address for spec in SIGNAL_LAYOUT]
+
+    by_address = {item.address: item for item in status.signals}
+    assert by_address["0.0"].label == "Automatico"
+    assert by_address["0.3"].label == "Portao de entrada"
+    assert by_address["0.3"].type == "BOOL"
+    assert by_address["0.3"].kind == "custom"
+    assert by_address["0.3"].value is False
+    app_storage.delete_machine(machine_id)
+
+
+def test_offline_machine_still_lists_signal_addresses():
+    from app.plc import SIGNAL_LAYOUT
+
+    area_id = app_storage.add_area("Test Plant", "Offline Area")
+    machine_id = app_storage.add_machine(area_id, "Offline", "192.0.2.1", 53, "UTC")
+    app_storage.set_signal_labels(machine_id, {"1.7": "Sensor final"})
+    status = TestClient(app).get(f"/api/machines/{machine_id}/status").json()
+    assert status["connected"] is False
+    assert len(status["signals"]) == len(SIGNAL_LAYOUT)
+    last = status["signals"][-2]
+    assert last["address"] == "1.7"
+    assert last["label"] == "Sensor final"
+    assert last["value"] is None, "offline must not be reported as a false bit"
     app_storage.delete_machine(machine_id)
 
 
@@ -187,6 +221,25 @@ def test_footer_links_to_repository_and_instagram():
     assert "@autoricbr" in page.text
 
 
+def test_dashboard_wires_the_signal_labels_editor():
+    client = TestClient(app)
+    page = client.get("/")
+    assert page.status_code == 200
+    assert 'id="signals-dialog"' in page.text
+    assert 'id="signals-editor"' in page.text
+    assert 'id="signals-save"' in page.text
+
+    script = client.get("/static/app.js").text
+    for hook in (
+        ".signals-toggle",
+        ".labels-machine",
+        "openSignalLabels",
+        "saveSignalLabels",
+        "/signals",
+    ):
+        assert hook in script, f"app.js does not wire {hook}"
+
+
 def test_snap7_error_bytes_are_decoded_for_logging():
     assert describe_error(RuntimeError(b" TCP : Unreachable peer")) == "TCP : Unreachable peer"
     assert describe_error(ValueError("falha de leitura")) == "falha de leitura"
@@ -243,3 +296,107 @@ def test_machine_timezone_is_validated_before_saving():
         MachineInput(name="M1", ip="10.0.0.1", db_number=53, timezone="Marte/Olympus")
     machine = MachineInput(name="M1", ip="10.0.0.1", db_number=53, timezone="America/Sao_Paulo")
     assert machine.timezone == "America/Sao_Paulo"
+
+
+def test_signal_labels_can_repeat_without_losing_a_signal():
+    area_id = app_storage.add_area("Test Plant", "Labels Area")
+    machine_id = app_storage.add_machine(area_id, "Labels", "fake", 53, "UTC")
+    app_storage.set_signal_labels(machine_id, {"0.3": "Portao", "0.4": "Portao"})
+    labels = app_storage.signal_labels(machine_id)
+    assert labels == {"0.3": "Portao", "0.4": "Portao"}
+    app_storage.delete_machine(machine_id)
+
+
+def test_clearing_a_signal_label_restores_the_default():
+    area_id = app_storage.add_area("Test Plant", "Labels Area")
+    machine_id = app_storage.add_machine(area_id, "Labels", "fake", 53, "UTC")
+    app_storage.set_signal_labels(machine_id, {"0.3": "Portao"})
+    app_storage.set_signal_labels(machine_id, {"0.3": ""})
+    assert app_storage.signal_labels(machine_id) == {}
+    app_storage.delete_machine(machine_id)
+
+
+def test_signal_label_rejects_unknown_address_and_trims_whitespace():
+    from app.models import SignalLabelInput
+
+    with pytest.raises(ValidationError):
+        SignalLabelInput(address="3.0", label="Fora do contrato")
+    with pytest.raises(ValidationError):
+        SignalLabelInput(address="0.3", label="Duas\nlinhas")
+    assert SignalLabelInput(address="0.3", label="  Portao  ").label == "Portao"
+    assert SignalLabelInput(address="0.3", label="").label == ""
+
+
+def test_machine_delete_removes_signal_labels():
+    area_id = app_storage.add_area("Test Plant", "Labels Area")
+    machine_id = app_storage.add_machine(area_id, "Labels", "fake", 53, "UTC")
+    app_storage.set_signal_labels(machine_id, {"0.3": "Portao"})
+    app_storage.delete_machine(machine_id)
+    assert app_storage.signal_labels(machine_id) == {}
+
+
+def test_signal_label_endpoints_require_authentication():
+    client = TestClient(app, raise_server_exceptions=False)
+    assert client.get("/api/config/machines/1/signals").status_code == 401
+    assert client.put("/api/config/machines/1/signals", json=[]).status_code == 401
+
+
+def test_signal_labels_round_trip_through_the_api():
+    from app.main import sessions
+
+    client = TestClient(app)
+    area_id = app_storage.add_area("Test Plant", "API Labels Area")
+    machine_id = app_storage.add_machine(area_id, "API Labels", "fake", 53, "UTC")
+    token = "test-token-signal-labels"
+    headers = {"Authorization": f"Bearer {token}"}
+    sessions.add(token)
+    try:
+        response = client.get(f"/api/config/machines/{machine_id}/signals", headers=headers)
+        assert response.status_code == 200
+        before = response.json()
+        assert [item["address"] for item in before] == [spec.address for spec in SIGNAL_LAYOUT]
+        # Address and type come from the contract; only the label is user editable.
+        assert all(item["label"] == spec.default_label for item, spec in zip(before, SIGNAL_LAYOUT))
+
+        response = client.put(
+            f"/api/config/machines/{machine_id}/signals",
+            headers=headers,
+            json=[{"address": "0.3", "label": "Portao de entrada"}],
+        )
+        assert response.status_code == 200
+        after = {item["address"]: item for item in response.json()}
+        assert after["0.3"]["label"] == "Portao de entrada"
+        assert after["0.3"]["type"] == "BOOL"
+        assert after["0.0"]["label"] == SIGNAL_LAYOUT[0].default_label
+        assert app_storage.signal_labels(machine_id) == {"0.3": "Portao de entrada"}
+
+        response = client.put(
+            f"/api/config/machines/{machine_id}/signals",
+            headers=headers,
+            json=[{"address": "3.0", "label": "Fora do contrato"}],
+        )
+        assert response.status_code == 422
+    finally:
+        sessions.discard(token)
+        app_storage.delete_machine(machine_id)
+
+
+def test_signal_labels_for_unknown_machine_are_rejected():
+    from app.main import sessions
+
+    client = TestClient(app)
+    token = "test-token-signal-labels-missing"
+    headers = {"Authorization": f"Bearer {token}"}
+    sessions.add(token)
+    try:
+        missing_id = 999_999
+        assert app_storage.get_machine(missing_id) is None
+        assert client.get(f"/api/config/machines/{missing_id}/signals", headers=headers).status_code == 404
+        response = client.put(
+            f"/api/config/machines/{missing_id}/signals",
+            headers=headers,
+            json=[{"address": "0.3", "label": "Portao"}],
+        )
+        assert response.status_code == 404
+    finally:
+        sessions.discard(token)

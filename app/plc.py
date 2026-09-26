@@ -13,10 +13,29 @@ from typing import Protocol
 # to stderr. Silence the library and report failures from application code instead.
 logging.getLogger("snap7").setLevel(logging.CRITICAL)
 
-SIGNAL_ADDRESSES = [f"{byte}.{bit}" for byte in (0, 1) for bit in range(8)]
-DEFAULT_SIGNAL_NAMES = {
-    "0.0": "AUTO", "0.1": "RUN", "0.2": "FAULT", "2.0": "COUNTER",
-}
+@dataclass(frozen=True)
+class SignalSpec:
+    """One fixed position in the PLC DB. Address and type are never configurable."""
+
+    address: str
+    kind: str
+    default_label: str
+
+
+# Standard contract: BOOL signals occupy 0.0 through 1.7, COUNTER is a BOOL at 2.0.
+# 0.0/0.1/0.2 are the standard AUTO/RUN/FAULT status bits used by the dashboard logic.
+SIGNAL_LAYOUT: tuple[SignalSpec, ...] = (
+    SignalSpec("0.0", "auto", "Automatico"),
+    SignalSpec("0.1", "run", "Producao"),
+    SignalSpec("0.2", "fault", "Saude"),
+    *(SignalSpec(f"0.{bit}", "custom", f"Sinal 0.{bit}") for bit in range(3, 8)),
+    *(SignalSpec(f"1.{bit}", "custom", f"Sinal 1.{bit}") for bit in range(8)),
+    SignalSpec("2.0", "counter", "Contador"),
+)
+
+SIGNAL_ADDRESSES = [spec.address for spec in SIGNAL_LAYOUT]
+KNOWN_ADDRESSES = frozenset(SIGNAL_ADDRESSES)
+SIGNAL_TYPES = {spec.address: "BOOL" for spec in SIGNAL_LAYOUT}
 
 
 def describe_error(error: BaseException) -> str:
@@ -41,19 +60,24 @@ class PLCClient(Protocol):
     def read(self, db_number: int) -> PLCReading: ...
 
 
-def parse_db(data: bytes, signal_names: dict[str, str] | None = None) -> PLCReading:
+def bit_value(data: bytes, address: str) -> bool:
+    byte, bit = (int(part) for part in address.split("."))
+    return bool(data[byte] & (1 << bit))
+
+
+def signal_label(spec: SignalSpec, labels: dict[str, str] | None = None) -> str:
+    """Return the configured label, falling back to the documented default."""
+    configured = (labels or {}).get(spec.address, "").strip()
+    return configured or spec.default_label
+
+
+def parse_db(data: bytes) -> PLCReading:
+    """Readings are keyed by address: labels are user editable and may repeat."""
     if len(data) < 8:
         raise ValueError("PLC DB data must contain at least 8 bytes")
-    names = signal_names or {}
-    bits = {
-        address: bool(data[int(address.split(".")[0])] & (1 << int(address.split(".")[1])))
-        for address in SIGNAL_ADDRESSES
-    }
-    bits["2.0"] = bool(data[2] & 1)
     return PLCReading(
         timestamp=datetime.now(timezone.utc),
-        bits={names.get(address, DEFAULT_SIGNAL_NAMES.get(address, f"Signal_{address.replace('.', '_')}")): value
-              for address, value in bits.items()},
+        bits={spec.address: bit_value(data, spec.address) for spec in SIGNAL_LAYOUT},
         count=struct.unpack(">i", data[4:8])[0],
     )
 

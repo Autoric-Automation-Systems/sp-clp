@@ -8,8 +8,26 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .models import AreaInput, HourlyCount, LoginRequest, MachineInput, MachineStatus, SetupPassword
-from .plc import FakePLCClient, PLCClient, Snap7PLCClient, describe_error
+from .models import (
+    AreaInput,
+    HourlyCount,
+    LoginRequest,
+    MachineInput,
+    MachineStatus,
+    SetupPassword,
+    SignalDefinition,
+    SignalLabelInput,
+    SignalValue,
+)
+from .plc import (
+    SIGNAL_LAYOUT,
+    SIGNAL_TYPES,
+    FakePLCClient,
+    PLCClient,
+    Snap7PLCClient,
+    describe_error,
+    signal_label,
+)
 from .security import hash_password, verify_password
 from .storage import Storage
 from .timezones import local_hour
@@ -102,33 +120,43 @@ def list_machines() -> list[dict]:
     return [dict(row) for row in storage.list_machines()]
 
 
+def build_signals(labels: dict[str, str], bits: dict[str, bool] | None) -> list[SignalValue]:
+    """Full layout in address order. A None value means the PLC could not be read."""
+    return [
+        SignalValue(
+            address=spec.address,
+            label=signal_label(spec, labels),
+            type=SIGNAL_TYPES[spec.address],
+            kind=spec.kind,
+            value=None if bits is None else bool(bits.get(spec.address)),
+        )
+        for spec in SIGNAL_LAYOUT
+    ]
+
+
 @app.get("/api/machines/{machine_id}/status", response_model=MachineStatus)
 def machine_status(machine_id: int) -> MachineStatus:
     machine = storage.get_machine(machine_id)
     if machine is None:
         raise HTTPException(status_code=404, detail="Maquina nao encontrada")
+    labels = storage.signal_labels(machine_id)
     try:
         reading = client_for(machine).read(machine["db_number"])
         storage.save_sample(machine_id, reading.count, reading.timestamp)
-        named = reading.bits
-        signals = [
-            {"name": name, "address": address, "value": value}
-            for address, (name, value) in zip(
-                [f"{byte}.{bit}" for byte in (0, 1) for bit in range(8)] + ["2.0"], named.items()
-            )
-        ]
+        bits = reading.bits
         return MachineStatus(
             machine_id=machine_id, connected=True, stale=False,
-            timestamp=reading.timestamp.isoformat(), auto=named.get("AUTO"),
-            run=named.get("RUN"), fault=named.get("FAULT"), count=reading.count,
-            signals=signals,
+            timestamp=reading.timestamp.isoformat(),
+            auto=bits["0.0"], run=bits["0.1"], fault=bits["0.2"], count=reading.count,
+            signals=build_signals(labels, bits),
         )
     except (ConnectionError, OSError, RuntimeError, ValueError, ImportError) as error:
         # Polled every few seconds per machine, so keep this at debug level.
         logger.debug("Maquina %s (%s) indisponivel: %s", machine_id, machine["ip"], describe_error(error))
         return MachineStatus(
             machine_id=machine_id, connected=False, stale=True, timestamp=None,
-            auto=None, run=None, fault=None, count=None, signals=[],
+            auto=None, run=None, fault=None, count=None,
+            signals=build_signals(labels, None),
         )
 
 
@@ -145,6 +173,34 @@ def hourly_counts(machine_id: int, _: None = Query(default=None)) -> list[Hourly
         )
         for row in storage.hourly_counts(machine_id)
     ]
+
+
+def describe_machine_signals(machine_id: int) -> list[SignalDefinition]:
+    labels = storage.signal_labels(machine_id)
+    return [
+        SignalDefinition(
+            address=spec.address,
+            label=signal_label(spec, labels),
+            type=SIGNAL_TYPES[spec.address],
+            kind=spec.kind,
+        )
+        for spec in SIGNAL_LAYOUT
+    ]
+
+
+@app.get("/api/config/machines/{machine_id}/signals", dependencies=[Depends(require_admin)])
+def get_machine_signals(machine_id: int) -> list[SignalDefinition]:
+    if storage.get_machine(machine_id) is None:
+        raise HTTPException(status_code=404, detail="Maquina nao encontrada")
+    return describe_machine_signals(machine_id)
+
+
+@app.put("/api/config/machines/{machine_id}/signals", dependencies=[Depends(require_admin)])
+def update_machine_signals(machine_id: int, payload: list[SignalLabelInput]) -> list[SignalDefinition]:
+    if storage.get_machine(machine_id) is None:
+        raise HTTPException(status_code=404, detail="Maquina nao encontrada")
+    storage.set_signal_labels(machine_id, {item.address: item.label for item in payload})
+    return describe_machine_signals(machine_id)
 
 
 def run() -> None:

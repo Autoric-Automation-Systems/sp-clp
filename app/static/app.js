@@ -20,6 +20,8 @@ let lastItems = [];
 // the fetched rows are kept outside the markup.
 const hourlyRows = new Map();
 const hourlyOpen = new Set();
+const signalsOpen = new Set();
+let editingLabelsFor = null;
 const HOURLY_VISIBLE = 8;
 
 async function request(url, options = {}) {
@@ -28,10 +30,34 @@ async function request(url, options = {}) {
   return fetch(url, {...options, headers});
 }
 
-function statusBlock(value, label, icon) {
-  const state = value === null ? 'unknown' : value ? 'ok' : 'bad';
-  const text = value === null ? 'Sem leitura' : value ? 'Ativo' : 'Parado';
-  return `<div class="state ${state}"><span class="state-icon">${icon}</span><div><strong>${text}</strong><small>${label}</small></div></div>`;
+function esc(value) {
+  return String(value === null || value === undefined ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function stateOf(item) {
+  // A null value means the PLC could not be read, which is not the same as a false bit.
+  if (!item || item.value === null || item.value === undefined) return 'unknown';
+  return item.value ? 'ok' : 'bad';
+}
+
+function statusBlock(item, icon) {
+  if (!item) return '';
+  const state = stateOf(item);
+  const text = state === 'unknown' ? 'Sem leitura' : item.value ? 'Ativo' : 'Parado';
+  return `<div class="state ${state}"><span class="state-icon">${icon}</span><div><strong>${text}</strong><small>${esc(item.label)} <em class="address">${esc(item.address)}</em></small></div></div>`;
+}
+
+function signalsOfKind(status, kind) {
+  return (status.signals || []).filter(function (item) { return item.kind === kind; });
+}
+
+function firstOfKind(status, kind) {
+  return signalsOfKind(status, kind)[0] || null;
 }
 
 function hourLabel(localHour, newestDate) {
@@ -61,8 +87,27 @@ function hourlySection(machine) {
   return `<div class="hourly"><button type="button" class="hourly-toggle" data-hourly-id="${machine.id}" aria-expanded="${open}">${action} contagens por hora</button>${body}</div>`;
 }
 
+function signalsSection(machine, status) {
+  const custom = signalsOfKind(status, 'custom');
+  const open = signalsOpen.has(machine.id);
+  let body = '';
+  if (open) {
+    body = '<ul class="signal-list">' + custom.map(function (item) {
+      const state = stateOf(item);
+      const text = state === 'unknown' ? '-' : item.value ? 'Ativo' : 'Parado';
+      return `<li class="signal-row"><span class="signal-address">${esc(item.address)}</span><span class="signal-name">${esc(item.label)}</span><span class="signal-state ${state}">${text}</span></li>`;
+    }).join('') + '</ul>';
+  }
+  const action = open ? 'Ocultar' : 'Ver';
+  return `<div class="signals"><button type="button" class="signals-toggle" data-signals-id="${machine.id}" aria-expanded="${open}">${action} sinais (${custom.length})</button>${body}</div>`;
+}
+
 function machineCard(machine, status) {
-  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">DB${machine.db_number}</span><h3>${machine.name}</h3><p class="meta">${machine.ip}</p></div><span class="connection-pill ${status.connected ? 'online' : 'offline'}"><i></i>${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(status.auto, 'Automatico', 'A')}${statusBlock(status.run, 'Producao', '>')}${statusBlock(status.fault, 'Saude', '+')}</div><div class="count"><span class="count-label">CONTADOR ATUAL</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado as ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${hourlySection(machine)}</article>`;
+  const counter = firstOfKind(status, 'counter');
+  const counterLabel = counter
+    ? `CONTADOR ${esc(counter.label)} <em class="address">${esc(counter.address)}</em>`
+    : 'CONTADOR ATUAL';
+  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">DB${esc(machine.db_number)}</span><h3>${esc(machine.name)}</h3><p class="meta">${esc(machine.ip)}</p></div><span class="connection-pill ${status.connected ? 'online' : 'offline'}"><i></i>${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(firstOfKind(status, 'auto'), 'A')}${statusBlock(firstOfKind(status, 'run'), '>')}${statusBlock(firstOfKind(status, 'fault'), '+')}</div><div class="count"><span class="count-label">${counterLabel}</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado as ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${signalsSection(machine, status)}${hourlySection(machine)}</article>`;
 }
 
 function renderGroups(items) {
@@ -81,9 +126,9 @@ function renderGroups(items) {
     const areaHtml = Object.keys(areas).map(function (area) {
       const cards = areas[area];
       const label = cards.length === 1 ? '1 maquina' : cards.length + ' maquinas';
-      return `<div class="area-group"><div class="area-heading"><span class="area-mark">/</span><h4>${area}</h4><span>${label}</span></div><div class="machine-grid">${cards.join('')}</div></div>`;
+      return `<div class="area-group"><div class="area-heading"><span class="area-mark">/</span><h4>${esc(area)}</h4><span>${label}</span></div><div class="machine-grid">${cards.join('')}</div></div>`;
     }).join('');
-    return `<section class="plant-group"><div class="plant-heading"><span class="section-index">PLANTA</span><h3>${plant}</h3></div>${areaHtml}</section>`;
+    return `<section class="plant-group"><div class="plant-heading"><span class="section-index">PLANTA</span><h3>${esc(plant)}</h3></div>${areaHtml}</section>`;
   }).join('');
 }
 
@@ -105,6 +150,18 @@ function renderCards() {
   document.querySelectorAll('.hourly-toggle').forEach(function (button) {
     button.onclick = function () { toggleHourly(Number(button.dataset.hourlyId)); };
   });
+  document.querySelectorAll('.signals-toggle').forEach(function (button) {
+    button.onclick = function () { toggleSignals(Number(button.dataset.signalsId)); };
+  });
+}
+
+function toggleSignals(machineId) {
+  if (signalsOpen.has(machineId)) {
+    signalsOpen.delete(machineId);
+  } else {
+    signalsOpen.add(machineId);
+  }
+  renderCards();
 }
 
 async function loadHourly(machineId) {
@@ -170,13 +227,16 @@ async function loadSettings() {
   document.querySelector('#area-list').innerHTML = areas.length
     ? areas.map(function (area) {
         const list = (byArea[area.id] || []).map(function (machine) {
-          return `<div class="machine-list-item"><span>${machine.name} - ${machine.ip} - DB${machine.db_number}</span><span class="machine-actions"><button type="button" class="edit-machine" data-machine-id="${machine.id}">Editar</button><button type="button" class="delete-machine danger" data-machine-id="${machine.id}">Excluir</button></span></div>`;
+          return `<div class="machine-list-item"><span>${esc(machine.name)} - ${esc(machine.ip)} - DB${esc(machine.db_number)}</span><span class="machine-actions"><button type="button" class="labels-machine" data-machine-id="${machine.id}">Sinais</button><button type="button" class="edit-machine" data-machine-id="${machine.id}">Editar</button><button type="button" class="delete-machine danger" data-machine-id="${machine.id}">Excluir</button></span></div>`;
         }).join('') || '<p class="form-hint">Nenhuma maquina nesta area.</p>';
         return `<div class="area-item"><div class="list-item"><strong>${area.name}</strong><span>${area.plant_name}</span></div>${list}</div>`;
       }).join('')
     : '<p class="form-hint">Nenhuma area cadastrada.</p>';
   document.querySelectorAll('.edit-machine').forEach(function (button) {
     button.onclick = function () { beginEdit(Number(button.dataset.machineId)); };
+  });
+  document.querySelectorAll('.labels-machine').forEach(function (button) {
+    button.onclick = function () { openSignalLabels(Number(button.dataset.machineId)); };
   });
   document.querySelectorAll('.delete-machine').forEach(function (button) {
     button.onclick = function () { deleteMachine(Number(button.dataset.machineId)); };
@@ -267,6 +327,53 @@ machineForm.onsubmit = async function (event) {
   document.querySelector('#machine-message').textContent = response.ok ? 'Maquina salva.' : (await response.json()).detail;
   if (response.ok) { cancelEdit(); await refresh(); loadSettings(); }
 };
+
+function signalField(signal) {
+  return `<label class="signal-field"><span>${esc(signal.address)}<em>${esc(signal.type)}</em></span>`
+    + `<input class="signal-input" data-address="${esc(signal.address)}" maxlength="60" value="${esc(signal.label)}"></label>`;
+}
+
+async function openSignalLabels(machineId) {
+  if (!token) {
+    message.textContent = 'Faca login para alterar configuracoes.';
+    dialog.showModal();
+    return;
+  }
+  const response = await request('/api/config/machines/' + machineId + '/signals');
+  if (!response.ok) return;
+  const signals = await response.json();
+  editingLabelsFor = machineId;
+  document.querySelector('#signals-editor').innerHTML = signals.map(signalField).join('');
+  document.querySelector('#signals-message').textContent = '';
+  document.querySelector('#signals-dialog').showModal();
+}
+
+async function saveSignalLabels() {
+  const payload = Array.from(document.querySelectorAll('.signal-input')).map(function (input) {
+    return { address: input.dataset.address, label: input.value };
+  });
+  const response = await request('/api/config/machines/' + editingLabelsFor + '/signals', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  const target = document.querySelector('#signals-message');
+  if (response.ok) {
+    target.textContent = 'Rotulos salvos.';
+    await refresh();
+  } else {
+    target.textContent = 'Falha ao salvar os rotulos.';
+  }
+}
+
+document.querySelector('#signals-save').onclick = saveSignalLabels;
+
+function closeSignalLabels() {
+  document.querySelector('#signals-dialog').close();
+}
+
+document.querySelector('#signals-close').onclick = closeSignalLabels;
+document.querySelector('#signals-cancel').onclick = closeSignalLabels;
 
 refresh();
 setInterval(refresh, 5000);

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 
+from .plc import KNOWN_ADDRESSES
 from .timezones import is_known_zone
 
 
@@ -37,10 +38,36 @@ class AreaInput(BaseModel):
     plant_name: str = Field(min_length=1, max_length=120)
 
 
-class SignalValue(BaseModel):
-    name: str
+class SignalDefinition(BaseModel):
     address: str
-    value: bool
+    label: str
+    type: str
+    kind: str
+
+
+class SignalValue(SignalDefinition):
+    # None means the PLC could not be read, not that the bit is false.
+    value: bool | None = None
+
+
+class SignalLabelInput(BaseModel):
+    address: str
+    label: str = Field(default="", max_length=60)
+
+    @field_validator("address")
+    @classmethod
+    def _known_address(cls, value: str) -> str:
+        if value not in KNOWN_ADDRESSES:
+            raise ValueError("Endereco desconhecido: o endereco e o tipo nao podem ser alterados")
+        return value
+
+    @field_validator("label")
+    @classmethod
+    def _single_line(cls, value: str) -> str:
+        cleaned = value.strip()
+        if "\n" in cleaned or "\r" in cleaned:
+            raise ValueError("Rotulo deve ocupar uma unica linha")
+        return cleaned
 
 
 class HourlyCount(BaseModel):

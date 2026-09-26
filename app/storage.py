@@ -51,6 +51,12 @@ class Storage:
                     quantity INTEGER NOT NULL,
                     PRIMARY KEY (machine_id, hour_start)
                 );
+                CREATE TABLE IF NOT EXISTS signal_labels (
+                    machine_id INTEGER NOT NULL REFERENCES machines(id),
+                    address TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    PRIMARY KEY (machine_id, address)
+                );
                 """
             )
 
@@ -104,6 +110,7 @@ class Storage:
                 return False
             connection.execute("DELETE FROM count_samples WHERE machine_id = ?", (machine_id,))
             connection.execute("DELETE FROM hourly_counts WHERE machine_id = ?", (machine_id,))
+            connection.execute("DELETE FROM signal_labels WHERE machine_id = ?", (machine_id,))
             connection.execute("DELETE FROM machines WHERE id = ?", (machine_id,))
             return True
 
@@ -144,3 +151,26 @@ class Storage:
                 "SELECT hour_start, quantity FROM hourly_counts WHERE machine_id = ? ORDER BY hour_start DESC",
                 (machine_id,),
             ))
+
+    def signal_labels(self, machine_id: int) -> dict[str, str]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT address, label FROM signal_labels WHERE machine_id = ?", (machine_id,)
+            ).fetchall()
+        return {row["address"]: row["label"] for row in rows}
+
+    def set_signal_labels(self, machine_id: int, labels: dict[str, str]) -> None:
+        """Store the given labels. An empty label removes the override and restores the default."""
+        with self.connect() as connection:
+            for address, label in labels.items():
+                if label:
+                    connection.execute(
+                        "INSERT INTO signal_labels(machine_id, address, label) VALUES (?, ?, ?) "
+                        "ON CONFLICT(machine_id, address) DO UPDATE SET label = excluded.label",
+                        (machine_id, address, label),
+                    )
+                else:
+                    connection.execute(
+                        "DELETE FROM signal_labels WHERE machine_id = ? AND address = ?",
+                        (machine_id, address),
+                    )
