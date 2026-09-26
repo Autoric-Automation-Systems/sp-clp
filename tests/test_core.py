@@ -1,10 +1,13 @@
 import logging
 from datetime import datetime, timezone
 
+import pytest
+from app.models import MachineInput
 from app.plc import FakePLCClient, describe_error, parse_db
 from app.security import hash_password, verify_password
 from app.storage import Storage
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.main import app, storage as app_storage
 
@@ -210,3 +213,33 @@ def test_unreachable_plc_failure_is_logged_at_debug_level(caplog):
     assert records[0].levelno == logging.DEBUG
     assert "192.0.2.1" in records[0].getMessage()
     app_storage.delete_machine(machine_id)
+
+
+def test_hourly_counts_are_reported_in_the_machine_timezone():
+    area_id = app_storage.add_area("Planta Fuso", "Area Fuso")
+    machine_id = app_storage.add_machine(area_id, "Fuso", "fake", 53, "America/Sao_Paulo")
+    app_storage.save_sample(machine_id, 100, datetime(2026, 9, 26, 10, 15, tzinfo=timezone.utc))
+    app_storage.save_sample(machine_id, 160, datetime(2026, 9, 26, 10, 45, tzinfo=timezone.utc))
+    rows = TestClient(app).get(f"/api/machines/{machine_id}/hourly-counts").json()
+    assert len(rows) == 1, "both samples fall inside the same local hour bucket"
+    assert rows[0]["hour_start"] == "2026-09-26T10:00:00+00:00"
+    assert rows[0]["local_hour"] == "2026-09-26T07:00:00-03:00"
+    assert rows[0]["quantity"] == 60
+    app_storage.delete_machine(machine_id)
+
+
+def test_hourly_counts_survive_an_unknown_stored_timezone():
+    area_id = app_storage.add_area("Planta Fuso", "Area Fuso")
+    machine_id = app_storage.add_machine(area_id, "Fuso Invalido", "fake", 53, "Marte/Olympus")
+    app_storage.save_sample(machine_id, 5, datetime(2026, 9, 26, 10, 15, tzinfo=timezone.utc))
+    response = TestClient(app).get(f"/api/machines/{machine_id}/hourly-counts")
+    assert response.status_code == 200
+    assert response.json()[0]["local_hour"] == "2026-09-26T10:00:00+00:00"
+    app_storage.delete_machine(machine_id)
+
+
+def test_machine_timezone_is_validated_before_saving():
+    with pytest.raises(ValidationError):
+        MachineInput(name="M1", ip="10.0.0.1", db_number=53, timezone="Marte/Olympus")
+    machine = MachineInput(name="M1", ip="10.0.0.1", db_number=53, timezone="America/Sao_Paulo")
+    assert machine.timezone == "America/Sao_Paulo"

@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from .timezones import is_known_zone
 
 
 class SetupPassword(BaseModel):
@@ -14,6 +16,13 @@ class MachineInput(BaseModel):
     ip: str = Field(min_length=1, max_length=255)
     db_number: int = Field(ge=1, le=65535)
     timezone: str = "UTC"
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, value: str) -> str:
+        if not is_known_zone(value):
+            raise ValueError("Fuso horario IANA desconhecido; use por exemplo America/Sao_Paulo")
+        return value
 
 
 class Machine(MachineInput):
@@ -32,6 +41,12 @@ class SignalValue(BaseModel):
     name: str
     address: str
     value: bool
+
+
+class HourlyCount(BaseModel):
+    hour_start: str
+    local_hour: str
+    quantity: int
 
 
 class MachineStatus(BaseModel):

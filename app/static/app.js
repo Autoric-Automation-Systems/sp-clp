@@ -14,6 +14,13 @@ const menuBackdrop = document.querySelector('#menu-backdrop');
 let token = null;
 let editingMachineId = null;
 let cachedMachines = [];
+let lastItems = [];
+// Hourly totals only change once per hour, so they are fetched on demand instead of
+// riding the 5 s status poll. Every refresh rebuilds the cards, so the open state and
+// the fetched rows are kept outside the markup.
+const hourlyRows = new Map();
+const hourlyOpen = new Set();
+const HOURLY_VISIBLE = 8;
 
 async function request(url, options = {}) {
   const headers = {...(options.headers || {})};
@@ -27,8 +34,35 @@ function statusBlock(value, label, icon) {
   return `<div class="state ${state}"><span class="state-icon">${icon}</span><div><strong>${text}</strong><small>${label}</small></div></div>`;
 }
 
+function hourLabel(localHour, newestDate) {
+  const date = localHour.slice(0, 10);
+  const time = localHour.slice(11, 16);
+  return date === newestDate ? time : `${date.slice(8, 10)}/${date.slice(5, 7)} ${time}`;
+}
+
+function hourlySection(machine) {
+  const open = hourlyOpen.has(machine.id);
+  const rows = hourlyRows.get(machine.id);
+  let body = '';
+  if (open) {
+    if (rows === 'loading') {
+      body = '<p class="hourly-note">Carregando...</p>';
+    } else if (!rows || rows.length === 0) {
+      body = '<p class="hourly-note">Sem historico horario registrado.</p>';
+    } else {
+      const newestDate = rows[0].local_hour.slice(0, 10);
+      const items = rows.slice(0, HOURLY_VISIBLE).map(function (row) {
+        return `<li><span>${hourLabel(row.local_hour, newestDate)}</span><b>${row.quantity}</b></li>`;
+      }).join('');
+      body = `<ol class="hourly-list">${items}</ol>`;
+    }
+  }
+  const action = open ? 'Ocultar' : 'Ver';
+  return `<div class="hourly"><button type="button" class="hourly-toggle" data-hourly-id="${machine.id}" aria-expanded="${open}">${action} contagens por hora</button>${body}</div>`;
+}
+
 function machineCard(machine, status) {
-  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">DB${machine.db_number}</span><h3>${machine.name}</h3><p class="meta">${machine.ip}</p></div><span class="connection-pill ${status.connected ? 'online' : 'offline'}"><i></i>${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(status.auto, 'Automatico', 'A')}${statusBlock(status.run, 'Producao', '>')}${statusBlock(status.fault, 'Saude', '+')}</div><div class="count"><span class="count-label">CONTADOR ATUAL</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado as ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div></article>`;
+  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">DB${machine.db_number}</span><h3>${machine.name}</h3><p class="meta">${machine.ip}</p></div><span class="connection-pill ${status.connected ? 'online' : 'offline'}"><i></i>${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(status.auto, 'Automatico', 'A')}${statusBlock(status.run, 'Producao', '>')}${statusBlock(status.fault, 'Saude', '+')}</div><div class="count"><span class="count-label">CONTADOR ATUAL</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado as ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${hourlySection(machine)}</article>`;
 }
 
 function renderGroups(items) {
@@ -61,8 +95,37 @@ async function refresh() {
     const statusResponse = await request('/api/machines/' + machine.id + '/status');
     return [machine, await statusResponse.json()];
   }));
-  machines.innerHTML = renderGroups(items);
+  lastItems = items;
+  renderCards();
   refreshState.textContent = 'Atualizado as ' + new Date().toLocaleTimeString();
+}
+
+function renderCards() {
+  machines.innerHTML = renderGroups(lastItems);
+  document.querySelectorAll('.hourly-toggle').forEach(function (button) {
+    button.onclick = function () { toggleHourly(Number(button.dataset.hourlyId)); };
+  });
+}
+
+async function loadHourly(machineId) {
+  const cached = hourlyRows.get(machineId);
+  if (cached && cached !== 'loading') return;
+  hourlyRows.set(machineId, 'loading');
+  renderCards();
+  const response = await request('/api/machines/' + machineId + '/hourly-counts');
+  hourlyRows.set(machineId, response.ok ? await response.json() : []);
+  renderCards();
+}
+
+function toggleHourly(machineId) {
+  if (hourlyOpen.has(machineId)) {
+    hourlyOpen.delete(machineId);
+    renderCards();
+    return;
+  }
+  hourlyOpen.add(machineId);
+  renderCards();
+  loadHourly(machineId);
 }
 
 async function setupStatus() {

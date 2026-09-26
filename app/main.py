@@ -8,10 +8,11 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .models import AreaInput, LoginRequest, MachineInput, MachineStatus, SetupPassword
+from .models import AreaInput, HourlyCount, LoginRequest, MachineInput, MachineStatus, SetupPassword
 from .plc import FakePLCClient, PLCClient, Snap7PLCClient, describe_error
 from .security import hash_password, verify_password
 from .storage import Storage
+from .timezones import local_hour
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -131,11 +132,19 @@ def machine_status(machine_id: int) -> MachineStatus:
         )
 
 
-@app.get("/api/machines/{machine_id}/hourly-counts")
-def hourly_counts(machine_id: int, _: None = Query(default=None)) -> list[dict]:
-    if storage.get_machine(machine_id) is None:
+@app.get("/api/machines/{machine_id}/hourly-counts", response_model=list[HourlyCount])
+def hourly_counts(machine_id: int, _: None = Query(default=None)) -> list[HourlyCount]:
+    machine = storage.get_machine(machine_id)
+    if machine is None:
         raise HTTPException(status_code=404, detail="Maquina nao encontrada")
-    return [dict(row) for row in storage.hourly_counts(machine_id)]
+    return [
+        HourlyCount(
+            hour_start=row["hour_start"],
+            local_hour=local_hour(row["hour_start"], machine["timezone"]),
+            quantity=row["quantity"],
+        )
+        for row in storage.hourly_counts(machine_id)
+    ]
 
 
 def run() -> None:

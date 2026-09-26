@@ -20,6 +20,7 @@ if (-not (Test-Path $venvPython)) {
 & $venvPython -m PyInstaller --noconfirm --clean --onefile --name SP-CLP `
     --add-data "app\static;app\static" `
     --collect-all snap7 `
+    --collect-all tzdata `
     sp_clp_launcher.py
 
 Write-Host "Executavel criado em dist\SP-CLP.exe"
