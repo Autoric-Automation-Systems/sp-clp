@@ -4,12 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SP-CLP | Monitoramento</title>
+  <link rel="icon" href="/static/assets/favicon_io/favicon.ico">
+  <link rel="apple-touch-icon" href="/static/assets/favicon_io/apple-touch-icon.png">
+  <link rel="manifest" href="/static/assets/favicon_io/site.webmanifest">
   <link rel="stylesheet" href="/static/styles.css">
   <style>.secondary{background:transparent;color:var(--ink)}.area-item{border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px}.machine-list-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0 8px 16px;font:13px Arial,sans-serif;color:var(--muted)}.machine-actions{display:flex;gap:6px}.machine-list-item button{padding:6px 10px;font-size:12px}.danger{background:#a93627;border-color:#a93627}</style>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="brand-mark">S7</span><div><span class="eyebrow">MONITORAMENTO INDUSTRIAL</span><h1>SP-CLP</h1></div></div>
+    <div class="brand"><img class="brand-icon" src="/static/assets/favicon_io/android-chrome-192x192.png" alt=""><div><span class="eyebrow">MONITORAMENTO INDUSTRIAL</span><h1>SP-CLP</h1></div></div>
     <div class="topbar-tools"><span id="session-state" class="session-state">Visitante</span><nav><button class="nav-button active" data-page="dashboard">Dashboard</button><button class="nav-button" data-page="settings">Configurações</button></nav></div>
   </header>
   <main>
@@ -29,7 +32,7 @@
       </section>
     </section>
   </main>
-  <footer><span>SP-CLP · Monitoramento local</span><span id="footer-connection">Servidor local ativo</span></footer>
+  <footer><a class="company-link" href="https://www.autoric.com.br" target="_blank" rel="noopener noreferrer"><img src="/static/assets/logo/logo-dev.png" alt="Autoric Automação e Sistemas"><span>www.autoric.com.br</span></a><span id="footer-connection">Servidor local ativo</span></footer>
   <dialog id="settings-dialog"><form method="dialog" id="settings-form"><button class="close" value="cancel">×</button><p class="eyebrow">ACESSO RESTRITO</p><h2>Autenticação</h2><div id="setup-fields"><label>Crie a senha inicial<input id="setup-password" type="password" minlength="8"></label><button type="button" id="setup-button">Criar senha</button></div><div id="login-fields" hidden><label>Senha<input id="login-password" type="password"></label><button type="button" id="login-button">Entrar</button></div><p id="settings-message" role="status"></p></form></dialog>
   <script src="/static/app.js"></script>
 </body>
