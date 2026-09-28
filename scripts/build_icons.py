@@ -29,6 +29,7 @@ ICONS = (
     # navigation and shell
     "layout-dashboard",
     "settings",
+    "menu",
     "x",
     "lock",
     "log-in",

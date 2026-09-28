@@ -671,6 +671,14 @@ def test_help_page_is_in_the_menu_and_documents_the_signals():
     assert "Cada nome precisa ser" in page.text
 
 
+def test_menu_button_uses_the_burger_icon():
+    page = TestClient(app).get("/").text
+    assert 'aria-controls="main-menu"><svg class="icon" data-icon="menu">' in page
+    # Three loose bars were flex items of the button, so they lined up sideways
+    # and the control read as a row of dashes.
+    assert "<span></span><span></span><span></span>" not in page
+
+
 def test_footer_social_links_show_only_the_icon():
     page = TestClient(app).get("/").text
     assert "https://github.com/Autoric-Automation-Systems/sp-clp" in page
