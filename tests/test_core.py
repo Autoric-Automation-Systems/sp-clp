@@ -877,6 +877,54 @@ def test_hourly_chart_window_is_wired():
         assert hook in script, f"app.js does not wire {hook}"
 
 
+def test_access_urls_prefer_the_machine_name():
+    from app.access import DEFAULT_HOST, access_urls, bind_host
+
+    assert bind_host() == DEFAULT_HOST == "0.0.0.0"
+    urls = access_urls(port=8000, host="0.0.0.0")
+    assert urls[0].startswith("http://") and urls[0].endswith(":8000")
+    assert "http://localhost:8000" in urls
+    # A localhost-only bind must not advertise addresses that would not answer.
+    assert access_urls(port=8000, host="127.0.0.1") == ["http://localhost:8000"]
+
+
+def test_access_endpoint_is_public_and_lists_the_addresses():
+    response = TestClient(app).get("/api/access")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["port"] == 8000
+    assert body["hostname"]
+    assert any(url.endswith(":8000") for url in body["urls"])
+    assert f"http://localhost:{body['port']}" in body["urls"]
+
+
+def test_help_page_explains_the_network():
+    page = TestClient(app).get("/").text
+    assert "Infraestrutura de rede" in page
+    assert "Porta 102" in page
+    assert 'id="access-addresses"' in page
+    # The list is filled from /api/access, so app.js has to wire it.
+    assert "loadAccess" in TestClient(app).get("/static/app.js").text
+
+
+def test_bind_port_ignores_a_broken_value():
+    import os
+
+    from app.access import DEFAULT_PORT, bind_port
+
+    previous = os.environ.get("SP_CLP_PORT")
+    try:
+        os.environ["SP_CLP_PORT"] = "nao-e-porta"
+        assert bind_port() == DEFAULT_PORT
+        os.environ["SP_CLP_PORT"] = "9001"
+        assert bind_port() == 9001
+    finally:
+        if previous is None:
+            os.environ.pop("SP_CLP_PORT", None)
+        else:
+            os.environ["SP_CLP_PORT"] = previous
+
+
 def test_footer_keeps_the_product_mark():
     page = TestClient(app).get("/").text
     # The client logo takes the header, so the product mark lives in the footer.

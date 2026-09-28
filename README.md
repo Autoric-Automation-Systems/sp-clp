@@ -21,7 +21,33 @@ python -m uvicorn app.main:app --reload
 
 Abra `http://127.0.0.1:8000` no navegador. O dashboard abre mesmo sem senha e sem máquinas cadastradas. A senha inicial deve ter pelo menos 8 caracteres e é armazenada como hash.
 
+O executável escuta em **todas as interfaces** (`0.0.0.0:8000`), então o painel também responde pelo nome do computador e pelo IP da rede — é o que permite salvar um favorito amigável (`http://nome-do-pc:8000`) e abrir de outra máquina da planta. A página **Ajuda** mostra os endereços válidos, lidos de `/api/access`.
+
+Para limitar de novo a este computador, ou trocar a porta, use as variáveis de ambiente:
+
+```powershell
+$env:SP_CLP_HOST = "127.0.0.1"   # só localhost
+$env:SP_CLP_PORT = "8080"
+```
+
+Na primeira execução o Windows pode pedir permissão de firewall; permita em redes privadas, senão o painel responde apenas neste computador.
+
 Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O cliente simulado usa o mesmo contrato do DB: sinais BOOL de `0.0` a `1.7` e `Count` como `UDInt` big-endian em `DBX2.0`.
+
+## Infraestrutura de rede
+
+O computador que roda o SP-CLP precisa alcançar **cada CLP** cadastrado; os CLPs não são descobertos sozinhos.
+
+- **Porta 102 (S7)** liberada entre o painel e cada CLP, em qualquer firewall, roteador ou VLAN do caminho
+- **Rede cabeada com switch**: mais estável e a recomendada para o painel
+- **Roteador Wi-Fi da própria rede local**: painel e CLP no mesmo roteador e na mesma faixa de IP
+- **Access point ou repetidor**: para cobrir galpões distantes, sem isolar os clientes entre si
+- **Várias plantas**: interligue as intranets (cabo, fibra, rádio enlace ou VPN site a site) com rota para a faixa de IP dos CLPs
+- **VLAN separada**: precisa de rota entre a VLAN do painel e a dos CLPs
+
+Não funciona com CLP atrás de NAT sem encaminhamento, rede de visitantes isolada, ou faixas de IP repetidas em plantas diferentes sem tradução de endereços.
+
+A página **Ajuda** do painel traz o mesmo conteúdo para o cliente.
 
 ## Contrato do CLP
 
@@ -69,6 +95,7 @@ A página `Ajuda` traz a documentação de uso: acesso, cadastro, rótulos de si
 - `app/plc.py`: protocolo, parser, simulador e adaptador Snap7
 - `app/storage.py`: SQLite, amostras e totais horários
 - `app/branding.py`: nome da empresa e logotipo do cabeçalho
+- `app/access.py`: endereços de acesso e configuração do bind
 - `app/slugs.py`: nome da planta convertido em endereço
 - `app/security.py`: hash de senha PBKDF2
 - `app/static/`: dashboard HTML/CSS/JavaScript

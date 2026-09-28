@@ -96,6 +96,26 @@
             <li><strong>Senha esquecida</strong>: apague a tabela <code>settings</code> do arquivo <code>data/sp-clp.sqlite3</code> e crie uma nova senha.</li>
           </ul>
         </article>
+        <article class="panel doc">
+          <p class="eyebrow">7. REDE</p><h3>Infraestrutura de rede</h3>
+          <p>O computador que roda o SP-CLP precisa <strong>conversar com cada CLP</strong> cadastrado. Os CLPs não são descobertos sozinhos: vale a rede entre o painel e cada endereço IP informado no cadastro.</p>
+          <ul>
+            <li><strong>Porta 102 (S7)</strong> liberada entre o painel e cada CLP — em qualquer firewall, roteador ou VLAN do caminho. É a porta da comunicação Siemens.</li>
+            <li><strong>Rede cabeada com switch</strong>: mais estável e a recomendada para o painel e para os CLPs.</li>
+            <li><strong>Roteador Wi-Fi da própria rede local</strong>: funciona quando painel e CLP estão no mesmo roteador e na mesma faixa de IP.</li>
+            <li><strong>Access point ou repetidor</strong>: para cobrir galpões distantes, desde que não isole os clientes entre si.</li>
+            <li><strong>Várias plantas</strong>: as intranets precisam se enxergar. Interligue os switches (cabo ou fibra), use rádio enlace ou VPN site a site, com rota para a faixa de IP dos CLPs.</li>
+            <li><strong>VLAN separada</strong>: precisa de rota entre a VLAN do painel e a dos CLPs.</li>
+          </ul>
+          <p><strong>Não funciona</strong>: CLP atrás de NAT sem encaminhamento, rede de visitantes isolada, ou faixas de IP iguais em plantas diferentes sem tradução de endereços. Nesses casos a máquina fica em <em>Offline</em> mesmo com o cabo conectado.</p>
+        </article>
+        <article class="panel doc">
+          <p class="eyebrow">8. ACESSO</p><h3>Onde abrir o painel</h3>
+          <p>Salve um destes endereços nos favoritos do navegador. O primeiro funciona para qualquer computador na mesma rede do painel:</p>
+          <ul id="access-addresses"><li>Carregando...</li></ul>
+          <p>O nome amigável vem do nome do computador. Para encurtar, por exemplo para <code>http://painel:8000</code>, registre o apelido no arquivo <code>hosts</code> do Windows de quem vai acessar — isso exige permissão de administrador.</p>
+          <p>Na primeira execução o Windows pode pedir permissão de firewall. <strong>Permita em redes privadas</strong>, senão o painel responde apenas neste computador.</p>
+        </article>
       </div>
     </section>
   </main>

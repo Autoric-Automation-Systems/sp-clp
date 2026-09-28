@@ -439,6 +439,17 @@ function applyBranding(branding) {
   document.title = name + ' | Monitoramento';
 }
 
+async function loadAccess() {
+  const response = await request('/api/access');
+  if (!response.ok) return;
+  const info = await response.json();
+  const list = document.querySelector('#access-addresses');
+  if (!list) return;
+  list.innerHTML = info.urls.map(function (url) {
+    return `<li><a href="${esc(url)}">${esc(url)}</a></li>`;
+  }).join('');
+}
+
 async function loadBranding() {
   const response = await request('/api/branding');
   if (response.ok) applyBranding(await response.json());
@@ -936,5 +947,6 @@ document.addEventListener('click', function (event) {
 
 applyRoute({settings: true});
 loadBranding();
+loadAccess();
 refresh();
 setInterval(refresh, 5000);

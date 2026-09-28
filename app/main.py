@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .access import access_urls, bind_host, bind_port, machine_name
 from .branding import (
     COMPANY_NAME_KEY,
     DEFAULT_COMPANY_NAME,
@@ -162,6 +163,16 @@ def remove_branding_logo() -> dict[str, str | None]:
     remove_logos(_branding_directory())
     storage.set_setting(LOGO_EXT_KEY, "")
     return _branding_payload()
+
+
+@app.get("/api/access")
+def get_access() -> dict[str, object]:
+    """Public: the help page shows these addresses to whoever opens the panel."""
+    return {
+        "hostname": machine_name(),
+        "port": bind_port(),
+        "urls": access_urls(),
+    }
 
 
 @app.get("/api/setup/status")
@@ -420,5 +431,8 @@ def run() -> None:
     import uvicorn
     import webbrowser
 
-    threading.Timer(1.5, lambda: webbrowser.open("http://127.0.0.1:8000")).start()
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    port = bind_port()
+    # The operator at this machine gets localhost; the named address is what makes
+    # a friendly browser favourite work, and what the plant network uses.
+    threading.Timer(1.5, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
+    uvicorn.run(app, host=bind_host(), port=port)
