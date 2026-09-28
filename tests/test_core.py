@@ -1594,3 +1594,74 @@ def test_machine_form_offers_the_sweep():
     assert "renderScanDatabases" in script
     assert "'/api/config/plc/scan'" in script
     assert "db_write" not in script
+
+
+def test_library_is_not_offered_when_the_build_carries_none(tmp_path, monkeypatch):
+    from app import library
+
+    monkeypatch.setattr(library, "BUNDLED_DIR", tmp_path)
+    body = TestClient(app).get("/api/library").json()
+    assert body == {"available": False, "filename": None, "size_bytes": None, "url": None}
+    # The help page must never offer a download that would fail.
+    assert TestClient(app).get("/api/library/download").status_code == 404
+
+
+def test_library_is_offered_when_the_file_is_there(tmp_path, monkeypatch):
+    from app import library
+
+    block = tmp_path / "FB_SP-CLP.zal"
+    block.write_bytes(b"PK\x03\x04biblioteca")
+    monkeypatch.setattr(library, "BUNDLED_DIR", tmp_path)
+
+    body = TestClient(app).get("/api/library").json()
+    assert body["available"] is True
+    assert body["filename"] == "FB_SP-CLP.zal"
+    assert body["size_bytes"] == block.stat().st_size
+    assert body["url"] == "/api/library/download"
+
+
+def test_library_download_sends_the_file_as_an_attachment(tmp_path, monkeypatch):
+    from app import library
+
+    payload = b"PK\x03\x04conteudo-binario"
+    (tmp_path / "FB_SP-CLP.zal").write_bytes(payload)
+    monkeypatch.setattr(library, "BUNDLED_DIR", tmp_path)
+
+    response = TestClient(app).get("/api/library/download")
+    assert response.status_code == 200
+    assert response.content == payload
+    disposition = response.headers["content-disposition"]
+    assert "attachment" in disposition
+    assert "FB_SP-CLP.zal" in disposition
+
+
+def test_library_offers_only_the_tia_portal_format(tmp_path, monkeypatch):
+    """A stray file in the folder must not become a download."""
+    from app import library
+
+    (tmp_path / "LEIA-ME.txt").write_text("nao sou a biblioteca")
+    (tmp_path / "rascunho.scl").write_text("// tambem nao")
+    monkeypatch.setattr(library, "BUNDLED_DIR", tmp_path)
+
+    assert library.library_file() is None
+    assert TestClient(app).get("/api/library").json()["available"] is False
+
+
+def test_library_picks_the_first_name_alphabetically(tmp_path, monkeypatch):
+    from app import library
+
+    (tmp_path / "z-antiga.zal").write_bytes(b"velha")
+    (tmp_path / "a-nova.zal").write_bytes(b"nova")
+    monkeypatch.setattr(library, "BUNDLED_DIR", tmp_path)
+
+    # The name shows next to the button, so a folder with two files is visible.
+    assert library.library_file().name == "a-nova.zal"
+
+
+def test_help_page_explains_the_tia_portal_import():
+    page = TestClient(app).get("/").text
+    assert "9. BIBLIOTECA" in page
+    assert "Abrir biblioteca global" in page
+    assert "FB_SP-CLP" in page
+    assert 'id="library-download"' in page
+    assert "loadLibrary" in TestClient(app).get("/static/app.js").text

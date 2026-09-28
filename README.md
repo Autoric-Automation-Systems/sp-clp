@@ -106,6 +106,15 @@ A página **Ajuda** do painel traz o mesmo conteúdo para o cliente.
 - **Somente leitura**: nenhum caminho escreve no CLP, e a conexão é aberta, usada e fechada, para não disputar a sessão do polling
 - Com `fake` no lugar do IP, a varredura usa o simulador: `DB1` responde `ready`, o que demonstra o fluxo sem CLP
 
+## Biblioteca do CLP
+
+O bloco `FB_SP-CLP`, que declara o DB lido pelo painel, viaja junto com o aplicativo e é oferecido na página **Ajuda**, no tópico *9. Biblioteca*.
+
+- Coloque o arquivo em `app/biblioteca/NOME.zal`. Ele entra no executável pelo `--add-data` de `scripts/build_windows.ps1`, então **trocar a biblioteca exige gerar o `.exe` de novo**
+- Só `*.zal` é anunciado. Com mais de um arquivo na pasta, o primeiro em ordem alfabética é o que sai, e o nome aparece ao lado do botão, para a escolha não ser silenciosa
+- A pasta não é pública: o arquivo só sai por `GET /api/library/download`, com `Content-Disposition: attachment`
+- `GET /api/library` diz se a instalação tem a biblioteca. Sem arquivo, a Ajuda avisa em vez de oferecer um link que falharia
+
 ## Identidade do cliente
 
 Em **Configurações → Identidade** o cliente define o **nome da empresa** e envia o **logotipo** que aparecem no cabeçalho e no título da aba. O logo fica em `data/logo.<ext>` (ao lado do banco) e é servido por `/api/branding/logo`.

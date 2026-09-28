@@ -19,6 +19,7 @@ if (-not (Test-Path $venvPython)) {
 & $venvPython -m pip install -e ".[build]"
 & $venvPython -m PyInstaller --noconfirm --clean --onefile --name SP-CLP `
     --add-data "app\static;app\static" `
+    --add-data "app\biblioteca;app\biblioteca" `
     --collect-all snap7 `
     --collect-all tzdata `
     sp_clp_launcher.py

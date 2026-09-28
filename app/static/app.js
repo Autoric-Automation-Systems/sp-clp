@@ -483,6 +483,31 @@ async function loadBranding() {
   if (response.ok) applyBranding(await response.json());
 }
 
+function formatBytes(size) {
+  if (size === null || size === undefined) return '';
+  if (size < 1024) return size + ' B';
+  if (size < 1024 * 1024) return Math.round(size / 1024) + ' KB';
+  return (size / (1024 * 1024)).toFixed(1).replace('.', ',') + ' MB';
+}
+
+// The block ships with the panel, but a build may carry none, and the help page
+// must not offer a download that would fail.
+async function loadLibrary() {
+  const target = document.querySelector('#library-download');
+  if (!target) return;
+  const response = await request('/api/library');
+  if (!response.ok) return;
+  const info = await response.json();
+  if (!info.available) {
+    target.className = 'library-download missing';
+    target.innerHTML = icon('info') + 'A biblioteca do bloco não está nesta instalação do painel.';
+    return;
+  }
+  target.className = 'library-download';
+  target.innerHTML = `<a class="download-link with-icon" href="${esc(info.url)}" download>${icon('save')}Baixar biblioteca</a>`
+    + `<span>${esc(info.filename)} &middot; ${esc(formatBytes(info.size_bytes))}</span>`;
+}
+
 async function showBrandingMessage(response, okText) {
   const target = document.querySelector('#branding-message');
   if (response.ok) {
@@ -1068,5 +1093,6 @@ document.addEventListener('click', function (event) {
 applyRoute({settings: true});
 loadBranding();
 loadAccess();
+loadLibrary();
 refresh();
 setInterval(refresh, 5000);
