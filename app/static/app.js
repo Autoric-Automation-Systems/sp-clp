@@ -717,7 +717,6 @@ function beginPlantRename(slug, name) {
 const PROBE_ICONS = {
   ready: 'circle-check',
   unsigned: 'triangle-alert',
-  missing: 'triangle-alert',
   unreachable: 'wifi-off',
 };
 
@@ -732,36 +731,71 @@ function resetProbe() {
   const target = document.querySelector('#machine-probe-message');
   target.hidden = true;
   target.textContent = '';
+  const list = document.querySelector('#machine-scan-databases');
+  list.innerHTML = '';
+  list.hidden = true;
 }
 
-// Read only: the address is checked against the PLC before the machine is
-// saved, so a wrong DB number is caught here instead of becoming a confusing
-// value on the dashboard.
-async function probeMachine() {
+function highlightDatabase() {
+  const value = Number(document.querySelector('#machine-db').value);
+  document.querySelectorAll('.db-chip').forEach(function (chip) {
+    chip.classList.toggle('selected', Number(chip.dataset.db) === value);
+  });
+}
+
+// The found DBs are buttons: typing the number by hand is what the sweep exists
+// to avoid, so selecting one is the only way the field is meant to be filled.
+function renderScanDatabases(databases) {
+  const list = document.querySelector('#machine-scan-databases');
+  list.innerHTML = '';
+  databases.forEach(function (number) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'db-chip';
+    chip.dataset.db = String(number);
+    chip.textContent = 'DB ' + number;
+    chip.onclick = function () {
+      document.querySelector('#machine-db').value = String(number);
+      highlightDatabase();
+      showProbe('ready', 'DB ' + number + ' selecionada. Ela já está no campo DB.');
+    };
+    list.appendChild(chip);
+  });
+  list.hidden = databases.length === 0;
+  highlightDatabase();
+}
+
+// Read only: the DB numbers are swept on the PLC before the machine is saved, so
+// a number nobody typed is what ends up configured.
+async function scanMachine() {
   const button = document.querySelector('#machine-probe');
   const label = document.querySelector('#machine-probe-label');
   const ip = document.querySelector('#machine-ip').value.trim();
-  const db = Number(document.querySelector('#machine-db').value);
-  if (!ip || !db) {
-    showProbe('missing', 'Informe o IP do CLP e o DB antes de verificar.');
+  if (!ip) {
+    showProbe('unreachable', 'Informe o IP do CLP antes de procurar.');
     return;
   }
   button.disabled = true;
-  label.textContent = 'Verificando...';
+  label.textContent = 'Procurando...';
+  resetProbe();
   try {
-    const response = await request('/api/config/plc/probe', {
+    const response = await request('/api/config/plc/scan', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ip: ip, db_number: db}),
+      body: JSON.stringify({ip: ip}),
     });
     const body = await response.json().catch(function () { return {}; });
-    if (response.ok) showProbe(body.status, body.message);
-    else showProbe('unreachable', typeof body.detail === 'string' ? body.detail : 'Não foi possível verificar o CLP.');
+    if (!response.ok) {
+      showProbe('unreachable', typeof body.detail === 'string' ? body.detail : 'Não foi possível varrer o CLP.');
+      return;
+    }
+    showProbe(body.status, body.message);
+    renderScanDatabases(body.databases || []);
   } catch (error) {
     showProbe('unreachable', 'Sem resposta do servidor do painel. Confira se o SP-CLP continua aberto.');
   } finally {
     button.disabled = false;
-    label.textContent = 'Verificar CLP';
+    label.textContent = 'Procurar DB';
   }
 }
 
@@ -813,11 +847,11 @@ document.querySelectorAll('.nav-button').forEach(function (button) {
 });
 document.querySelector('#login-open-button').onclick = openLogin;
 document.querySelector('#machine-cancel').onclick = cancelEdit;
-document.querySelector('#machine-probe').onclick = probeMachine;
-// The result belongs to the address that was scanned, so editing the address or
-// the DB clears it instead of leaving a stale answer on screen.
+document.querySelector('#machine-probe').onclick = scanMachine;
+// The result belongs to the address that was swept, so editing the address clears
+// it instead of leaving a list of DB numbers from another PLC on screen.
 document.querySelector('#machine-ip').oninput = resetProbe;
-document.querySelector('#machine-db').oninput = resetProbe;
+document.querySelector('#machine-db').oninput = highlightDatabase;
 document.querySelector('#setup-button').onclick = async function () {
   const password = document.querySelector('#setup-password').value;
   const response = await request('/api/setup/password', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: password})});

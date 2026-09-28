@@ -85,19 +85,22 @@ A página **Ajuda** do painel traz o mesmo conteúdo para o cliente.
 
 ## Varredura do CLP
 
-O botão **Verificar CLP** do formulário de máquina lê o endereço informado **antes** de salvar e responde em qual dos quatro casos o cadastro está:
+**Procurar DB**, no formulário de máquina, varre o CLP informado de `DB1` a `DB1000` lendo o bloco da assinatura em cada número e lista os DBs que respondem `SPCLP`. Cada DB encontrado vira um botão: clicar nele leva o número ao campo *DB*, então ninguém digita o número à mão.
 
-| Resultado | Significado | Onde corrigir |
-| --- | --- | --- |
-| `ready` | A DB existe e tem a assinatura `SPCLP` | Nada |
-| `missing` | O CLP respondeu, mas a leitura da DB foi recusada | Número do DB, bloco otimizado |
-| `unsigned` | A DB respondeu, mas sem a assinatura do SP-CLP | DB errada, ou bloco sem a assinatura |
-| `unreachable` | Não houve resposta do CLP | IP, cabo, rack `0` / slot `1` |
+| Resultado | Significado |
+| --- | --- |
+| `ready` | Um ou mais DBs têm a assinatura; cada um aparece para seleção |
+| `unsigned` | O CLP respondeu, mas nenhuma DB da faixa tem a assinatura no byte `14` |
+| `unreachable` | Não houve resposta do CLP, ou a conexão caiu no meio da varredura |
 
-- `POST /api/config/plc/probe` com `{"ip": "...", "db_number": N}`; exige autenticação, como todo endpoint de configuração
-- **Somente leitura**: o endpoint nunca escreve no CLP, e a conexão é aberta, usada e fechada, para não disputar a sessão do polling
-- Sem `missing` e `unsigned` separados, um DB errado mostraria valores plausíveis e sem sentido no dashboard
-- Com `fake` no lugar do IP, a varredura usa o simulador e serve para demonstrar o fluxo sem CLP
+- `POST /api/config/plc/scan` com `{"ip": "...", "first": 1, "last": 1000}`; `first` e `last` são opcionais
+- Exige autenticação, como todo endpoint de configuração
+- Cada DB da faixa custa uma leitura: são cerca de mil idas e voltas, alguns segundos numa rede de planta
+- A varredura para sozinha aos `25 s` ou em `2000` DBs por chamada, e marca `truncated` quando não chegou ao fim da faixa
+- Se a conexão cair no meio, a resposta é `unreachable` e os DBs já confirmados continuam na lista
+- Quando nenhuma DB tem a assinatura mas algumas respondem à leitura, o `detail` mostra o que a primeira tem no offset — é o que separa "offset errado" de "CLP sem o bloco"
+- **Somente leitura**: nenhum caminho escreve no CLP, e a conexão é aberta, usada e fechada, para não disputar a sessão do polling
+- Com `fake` no lugar do IP, a varredura usa o simulador: `DB1` responde `ready`, o que demonstra o fluxo sem CLP
 
 ## Identidade do cliente
 

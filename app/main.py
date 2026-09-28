@@ -29,8 +29,8 @@ from .models import (
     MachineInput,
     MachineStatus,
     PlantRenameInput,
-    ProbeInput,
-    ProbeResult,
+    ScanInput,
+    ScanResult,
     SetupPassword,
     SignalDefinition,
     SignalLabelInput,
@@ -50,7 +50,7 @@ from .plc import (
     Snap7ProbeClient,
     describe_error,
     duplicate_labels,
-    probe_plc,
+    scan_databases,
     signal_label,
 )
 from .security import hash_password, verify_password
@@ -294,17 +294,30 @@ def create_machine(area_id: int, payload: MachineInput) -> dict[str, int]:
     return {"id": storage.add_machine(area_id, payload.name, payload.ip, payload.db_number, payload.timezone)}
 
 
-@app.post("/api/config/plc/probe", response_model=ProbeResult, dependencies=[Depends(require_admin)])
-def scan_plc(payload: ProbeInput) -> ProbeResult:
-    """Read-only scan of an address typed in the machine form.
+@app.post("/api/config/plc/scan", response_model=ScanResult, dependencies=[Depends(require_admin)])
+def scan_plc(payload: ScanInput) -> ScanResult:
+    """Walk the DB numbers of one address and list the ones that are ours.
 
-    Answers before the machine is saved, so a wrong DB number or a DB that was
-    never prepared for SP-CLP is caught here instead of showing up later as
-    plausible nonsense on the dashboard. Nothing is ever written to the PLC.
+    The operator types the IP and picks a DB from the result, so a wrong number
+    is never typed by hand and a foreign DB never reaches the dashboard. Nothing
+    is ever written to the PLC.
     """
-    result = probe_plc(probe_client_for(payload.ip), payload.db_number, payload.ip)
-    logger.info("Varredura de %s DB %s: %s", payload.ip, payload.db_number, result.status)
-    return ProbeResult(status=result.status, message=result.message, detail=result.detail)
+    result = scan_databases(
+        probe_client_for(payload.ip), payload.ip, payload.first, payload.last
+    )
+    logger.info(
+        "Varredura de %s DB %s-%s: %s, %s encontrados",
+        payload.ip, payload.first, payload.last, result.status, len(result.databases),
+    )
+    return ScanResult(
+        status=result.status,
+        message=result.message,
+        databases=list(result.databases),
+        scanned=result.scanned,
+        answered=result.answered,
+        truncated=result.truncated,
+        detail=result.detail,
+    )
 
 
 @app.put("/api/config/machines/{machine_id}", dependencies=[Depends(require_admin)])

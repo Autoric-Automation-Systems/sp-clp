@@ -8,7 +8,6 @@ from app.models import MachineInput
 from app.plc import (
     EDITABLE_ADDRESSES,
     LOCKED_ADDRESSES,
-    PROBE_MISSING,
     PROBE_READY,
     PROBE_UNREACHABLE,
     PROBE_UNSIGNED,
@@ -1258,58 +1257,120 @@ def test_layout_matches_the_customer_db():
     assert COUNT_OFFSET + COUNT_SIZE == READ_SIZE
 
 
-def _probe(**kwargs):
-    from app.plc import probe_plc
+def _scan(first: int = 1, last: int = 10, **kwargs):
+    from app.plc import scan_databases
 
-    return probe_plc(FakePLCProbeClient(**kwargs), 1, "192.168.0.10")
+    return scan_databases(FakePLCProbeClient(**kwargs), "192.168.0.10", first=first, last=last)
 
 
-def test_probe_accepts_a_prepared_db():
-    from app.plc import SIGNATURE_TEXT
-
-    result = _probe()
+def test_scan_lists_the_databases_that_carry_the_signature():
+    result = _scan(databases=(1, 7))
     assert result.status == PROBE_READY
-    assert SIGNATURE_TEXT in result.message
-    assert result.detail is None
+    assert result.databases == (1, 7)
+    # Every number in the range is looked at, and only the matches are offered.
+    assert result.scanned == 10
+    assert result.answered == 2
+    assert "1, 7" in result.message
 
 
-def test_probe_tells_a_wrong_db_from_an_unreachable_plc():
-    """These two look identical on the dashboard, and are fixed in different places."""
-    wrong_db = _probe(databases=(7,))
-    assert wrong_db.status == PROBE_MISSING
-    assert "1" in wrong_db.message
-
-    offline = _probe(reachable=False)
-    assert offline.status == PROBE_UNREACHABLE
-    assert "192.168.0.10" in offline.message
-    # Rack and slot belong in the message: a wrong value also breaks the connect.
-    assert "rack 0 / slot 1" in offline.message
+def test_scan_reaches_the_high_db_numbers():
+    result = _scan(first=1, last=1000, databases=(137,))
+    assert result.status == PROBE_READY
+    assert result.databases == (137,)
+    assert result.scanned == 1000
 
 
-def test_probe_reports_a_db_that_was_never_prepared():
-    # The signature is 5 bytes, so a 5 byte value is what the block can hold.
-    result = _probe(signature=b"OUTRO")
+def test_scan_summarises_a_long_list():
+    result = _scan(first=1, last=100, databases=tuple(range(1, 25)))
+    assert result.databases == tuple(range(1, 25))
+    assert "e mais" in result.message
+
+
+def test_scan_says_when_no_database_answers():
+    result = _scan(databases=())
     assert result.status == PROBE_UNSIGNED
-    assert result.detail == "OUTRO"
+    assert result.databases == ()
+    assert result.answered == 0
+    assert "1" in result.message and "10" in result.message
 
 
-def test_probe_shows_the_signature_it_found():
-    """The operator needs to see what is written in the block, not just a mismatch."""
-    # A short value arrives padded with NUL bytes, which must not reach the panel.
-    assert _probe(signature=b"SPX").detail == "SPX"
-    # An empty block says so instead of showing eight invisible characters.
-    empty = _probe(signature=b"")
-    assert empty.status == PROBE_UNSIGNED
-    assert "vazio" in empty.message
-    assert empty.detail is None
-    # Bytes that are not text at all must not break the response either, and a
-    # block full of numbers must not be printed as gibberish.
-    numeric = _probe(signature=bytes([255, 254, 253, 252, 251, 250, 249, 248]))
-    assert numeric.status == PROBE_UNSIGNED
-    assert numeric.detail is None
+def test_scan_shows_what_a_foreign_database_holds():
+    """A range full of other DBs must say what it found there, not just 'nothing'."""
+    result = _scan(databases=(3,), signature=b"OUTRO")
+    assert result.status == PROBE_UNSIGNED
+    assert result.answered == 1
+    assert result.detail == "DB 3: OUTRO"
+    assert "aceitaram a leitura" in result.message
 
 
-def test_probe_reads_only_text_out_of_a_mixed_block():
+def test_scan_keeps_the_matches_when_the_link_dies():
+    result = _scan(first=1, last=50, databases=(1, 2, 40), drop_at=30)
+    assert result.status == PROBE_UNREACHABLE
+    assert result.truncated is True
+    # The numbers confirmed before the drop are still offered.
+    assert result.databases == (1, 2)
+    assert result.scanned == 30
+    assert "30" in result.message
+
+
+def test_scan_reports_an_address_that_never_answers():
+    result = _scan(reachable=False)
+    assert result.status == PROBE_UNREACHABLE
+    assert result.databases == ()
+    assert result.scanned == 0
+    assert "192.168.0.10" in result.message
+    # Rack and slot belong in the message: a wrong value also breaks the connect.
+    assert "rack 0 / slot 1" in result.message
+
+
+def test_scan_stops_at_the_deadline():
+    """A slow PLC must not hold the request thread until the range ends."""
+    from app.plc import scan_databases
+
+    ticks = {"now": 0.0}
+
+    def clock() -> float:
+        ticks["now"] += 5.0
+        return ticks["now"]
+
+    result = scan_databases(
+        FakePLCProbeClient(), "192.168.0.10", first=1, last=1000, deadline_s=12.0, clock=clock
+    )
+    assert result.truncated is True
+    assert result.scanned == 2
+    assert result.databases == (1,)
+    assert "interrompida" in result.message
+
+
+def test_scan_never_leaves_the_connection_open():
+    """Even a sweep that finds nothing must close, or a wrong address leaks a socket."""
+    class Tracked(FakePLCProbeClient):
+        def __init__(self):
+            super().__init__(databases=())
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    from app.plc import scan_databases
+
+    prober = Tracked()
+    assert scan_databases(prober, "192.168.0.10", first=1, last=3).status == PROBE_UNSIGNED
+    assert prober.closed is True
+
+
+def test_scan_survives_a_close_that_raises():
+    from app.plc import scan_databases
+
+    class Stubborn(FakePLCProbeClient):
+        def close(self):
+            raise OSError("socket already gone")
+
+    result = scan_databases(Stubborn(), "192.168.0.10", first=1, last=3)
+    assert result.status == PROBE_READY
+
+
+def test_readable_signature_reads_only_text_out_of_a_mixed_block():
     """A wrong offset usually points at numbers, which are not a signature."""
     from app.plc import SIGNATURE, readable_signature
 
@@ -1319,92 +1380,92 @@ def test_probe_reads_only_text_out_of_a_mixed_block():
     assert readable_signature(SIGNATURE) == "SPCLP"
 
 
-def test_probe_never_leaves_the_connection_open():
-    """Even a failing read must close, or a wrong address leaks a socket."""
-    from app.plc import probe_plc
-
-    class Tracked(FakePLCProbeClient):
-        def __init__(self):
-            super().__init__(databases=(7,))
-            self.closed = False
-
-        def close(self):
-            self.closed = True
-
-    prober = Tracked()
-    assert probe_plc(prober, 1, "192.168.0.10").status == PROBE_MISSING
-    assert prober.closed is True
-
-
-def test_probe_survives_a_close_that_raises():
-    from app.plc import probe_plc
-
-    class Stubborn(FakePLCProbeClient):
-        def close(self):
-            raise OSError("socket already gone")
-
-    # The result must survive a transport that cannot clean itself up.
-    assert probe_plc(Stubborn(), 1, "192.168.0.10").status == PROBE_READY
-
-
-def test_probe_endpoint_requires_authentication():
-    response = TestClient(app).post("/api/config/plc/probe", json={"ip": "192.168.0.10", "db_number": 1})
+def test_scan_endpoint_requires_authentication():
+    response = TestClient(app).post("/api/config/plc/scan", json={"ip": "192.168.0.10"})
     assert response.status_code == 401
 
 
-def test_probe_endpoint_answers_for_the_simulator():
-    client = _admin_client("test-token-probe")
+def test_scan_endpoint_lists_the_simulated_database():
+    client = _admin_client("test-token-scan")
     try:
         response = client.post(
-            "/api/config/plc/probe",
-            headers={"Authorization": "Bearer test-token-probe"},
-            json={"ip": "fake", "db_number": 1},
+            "/api/config/plc/scan",
+            headers={"Authorization": "Bearer test-token-scan"},
+            json={"ip": "fake"},
         )
         assert response.status_code == 200
-        assert response.json()["status"] == PROBE_READY
+        body = response.json()
+        assert body["status"] == PROBE_READY
+        assert body["databases"] == [1]
+        assert body["truncated"] is False
     finally:
         from app.main import sessions
 
-        sessions.discard("test-token-probe")
+        sessions.discard("test-token-scan")
 
 
-def test_probe_endpoint_rejects_a_blank_address():
-    client = _admin_client("test-token-probe-blank")
+def test_scan_endpoint_honours_a_narrow_range():
+    client = _admin_client("test-token-scan-range")
     try:
         response = client.post(
-            "/api/config/plc/probe",
-            headers={"Authorization": "Bearer test-token-probe-blank"},
-            json={"ip": "   ", "db_number": 1},
+            "/api/config/plc/scan",
+            headers={"Authorization": "Bearer test-token-scan-range"},
+            json={"ip": "fake", "first": 5, "last": 5},
+        )
+        assert response.status_code == 200
+        assert response.json()["databases"] == []
+        assert response.json()["scanned"] == 1
+    finally:
+        from app.main import sessions
+
+        sessions.discard("test-token-scan-range")
+
+
+def test_scan_endpoint_rejects_a_blank_address():
+    client = _admin_client("test-token-scan-blank")
+    try:
+        response = client.post(
+            "/api/config/plc/scan",
+            headers={"Authorization": "Bearer test-token-scan-blank"},
+            json={"ip": "   "},
         )
         assert response.status_code == 422
     finally:
         from app.main import sessions
 
-        sessions.discard("test-token-probe-blank")
+        sessions.discard("test-token-scan-blank")
 
 
-def test_probe_endpoint_rejects_a_db_out_of_range():
-    client = _admin_client("test-token-probe-db")
+def test_scan_endpoint_rejects_an_unusable_range():
+    from app.plc import MAX_DB_RANGE
+
+    client = _admin_client("test-token-scan-bad-range")
+    headers = {"Authorization": "Bearer test-token-scan-bad-range"}
     try:
-        response = client.post(
-            "/api/config/plc/probe",
-            headers={"Authorization": "Bearer test-token-probe-db"},
-            json={"ip": "192.168.0.10", "db_number": 0},
+        inverted = client.post(
+            "/api/config/plc/scan", headers=headers, json={"ip": "fake", "first": 100, "last": 10}
         )
-        assert response.status_code == 422
+        assert inverted.status_code == 422
+
+        too_wide = client.post(
+            "/api/config/plc/scan", headers=headers, json={"ip": "fake", "first": 1, "last": MAX_DB_RANGE + 1}
+        )
+        assert too_wide.status_code == 422
     finally:
         from app.main import sessions
 
-        sessions.discard("test-token-probe-db")
+        sessions.discard("test-token-scan-bad-range")
 
 
-def test_machine_form_offers_the_scan():
+def test_machine_form_offers_the_sweep():
     page = TestClient(app).get("/").text
     assert 'id="machine-probe"' in page
     assert 'id="machine-probe-message"' in page
+    assert 'id="machine-scan-databases"' in page
     assert "SPCLP" in page
-    # The button is wired in app.js, and the scan is read only by design.
+    # The button is wired in app.js, and the sweep is read only by design.
     script = TestClient(app).get("/static/app.js").text
-    assert "probeMachine" in script
-    assert "'/api/config/plc/probe'" in script
+    assert "scanMachine" in script
+    assert "renderScanDatabases" in script
+    assert "'/api/config/plc/scan'" in script
     assert "db_write" not in script

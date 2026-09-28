@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .plc import KNOWN_ADDRESSES
+from .plc import DEFAULT_DB_FIRST, DEFAULT_DB_LAST, MAX_DB_RANGE, KNOWN_ADDRESSES
 from .timezones import is_known_zone
 
 
@@ -33,11 +33,12 @@ class Machine(MachineInput):
     slot: int = 1
 
 
-class ProbeInput(BaseModel):
-    """An address typed in the machine form, scanned before it is saved."""
+class ScanInput(BaseModel):
+    """An address and a range typed in the machine form, swept before saving."""
 
     ip: str = Field(min_length=1, max_length=255)
-    db_number: int = Field(ge=1, le=65535)
+    first: int = Field(default=DEFAULT_DB_FIRST, ge=1, le=65535)
+    last: int = Field(default=DEFAULT_DB_LAST, ge=1, le=65535)
 
     @field_validator("ip")
     @classmethod
@@ -47,10 +48,22 @@ class ProbeInput(BaseModel):
             raise ValueError("Informe o IP do CLP")
         return cleaned
 
+    @model_validator(mode="after")
+    def _usable_range(self) -> "ScanInput":
+        if self.last < self.first:
+            raise ValueError("A faixa de DB esta invertida")
+        if self.last - self.first + 1 > MAX_DB_RANGE:
+            raise ValueError(f"A varredura aceita no maximo {MAX_DB_RANGE} DBs por vez")
+        return self
 
-class ProbeResult(BaseModel):
+
+class ScanResult(BaseModel):
     status: str
     message: str
+    databases: list[int] = []
+    scanned: int = 0
+    answered: int = 0
+    truncated: bool = False
     detail: str | None = None
 
 

@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 import struct
 import threading
+import time
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Callable, Protocol
 
 
 # python-snap7 calls logger.error() with raw bytes on every failed connect, and the
@@ -205,31 +206,45 @@ class Snap7PLCClient:
                 raise
 
 
-# The scan tells three different mistakes apart, because each one is fixed in a
-# different place: the cable and the IP, the DB number, or the DB contents.
+# The sweep tells three different mistakes apart, because each one is fixed in a
+# different place: the cable and the IP, the DB range, or the block contents.
 PROBE_READY = "ready"
 PROBE_UNSIGNED = "unsigned"
-PROBE_MISSING = "missing"
 PROBE_UNREACHABLE = "unreachable"
 
 # Long enough for a plant network, short enough that one click cannot hang the
 # request thread while a machine with no PLC at that address is being scanned.
 PROBE_TIMEOUT_MS = 2000
 
+# The configuration scan walks the DB numbers looking for the signature block.
+DEFAULT_DB_FIRST = 1
+DEFAULT_DB_LAST = 1000
+# Bounds so one request cannot pin a worker thread for minutes.
+MAX_DB_RANGE = 2000
+SCAN_DEADLINE_S = 25.0
+# How many DB numbers are spelled out in the summary message.
+REPORTED_DB_LIMIT = 10
+
 
 @dataclass(frozen=True)
-class PLCProbe:
+class DBScan:
     status: str
     message: str
+    databases: tuple[int, ...] = ()
+    scanned: int = 0
+    answered: int = 0
+    truncated: bool = False
     detail: str | None = None
 
 
 class PLCProbeClient(Protocol):
-    """What the scan needs from a transport, so it can be faked without a PLC."""
+    """What the sweep needs from a transport, so it can be faked without a PLC."""
 
     def open(self) -> None: ...
 
     def read_block(self, db_number: int, start: int, size: int) -> bytes: ...
+
+    def connected(self) -> bool: ...
 
     def close(self) -> None: ...
 
@@ -244,53 +259,103 @@ def readable_signature(block: bytes) -> str:
     return " ".join(text.split())
 
 
-def probe_plc(prober: PLCProbeClient, db_number: int, label: str) -> PLCProbe:
-    """Answer whether a DB is really an SP-CLP DB. Reads only, never writes.
+def scan_databases(
+    prober: PLCProbeClient,
+    label: str,
+    first: int = DEFAULT_DB_FIRST,
+    last: int = DEFAULT_DB_LAST,
+    deadline_s: float = SCAN_DEADLINE_S,
+    clock: Callable[[], float] = time.monotonic,
+) -> DBScan:
+    """Walk the DB numbers of one PLC and report which ones carry the signature.
 
-    The steps are reported separately on purpose: "the PLC did not answer" and
-    "the PLC answered but that DB is not ours" send the customer to different
-    places, and a wrong DB number would otherwise show plausible nonsense values
-    on the dashboard.
+    Reads only, never writes. One round trip per DB is slower than a multi var
+    read, but every answer stays unambiguous: a DB that does not exist, or is too
+    short, refuses the read, and nothing is inferred from a response the PLC is
+    allowed to reject.
     """
     try:
         prober.open()
     except Exception as error:
-        return PLCProbe(
+        return DBScan(
             PROBE_UNREACHABLE,
             f"Não consegui falar com o CLP em {label}. Confira o IP, a rede e se o CLP "
             f"aceita conexão no rack {DEFAULT_RACK} / slot {DEFAULT_SLOT}.",
-            describe_error(error),
+            detail=describe_error(error),
         )
+
+    started = clock()
+    found: list[int] = []
+    scanned = 0
+    answered = 0
+    sample: tuple[int, bytes] | None = None
+    truncated = False
+    lost: str | None = None
     try:
-        try:
-            block = bytes(prober.read_block(db_number, SIGNATURE_OFFSET, len(SIGNATURE)))
-        except Exception as error:
-            return PLCProbe(
-                PROBE_MISSING,
-                f"O CLP respondeu, mas a leitura da DB {db_number} foi recusada. Confira o "
-                "número do DB e se o bloco não está com acesso otimizado.",
-                describe_error(error),
-            )
-        if block == SIGNATURE:
-            return PLCProbe(
-                PROBE_READY,
-                f"DB {db_number} verificada: assinatura {SIGNATURE_TEXT} encontrada.",
-            )
-        # What is actually written in the block is the actionable part here, so it
-        # goes in the message and not only in the technical detail.
-        found = readable_signature(block)
-        return PLCProbe(
-            PROBE_UNSIGNED,
-            f"O CLP respondeu, mas a DB {db_number} não tem a assinatura do SP-CLP. "
-            f"Encontrado: {found or 'vazio'}; esperado: {SIGNATURE_TEXT}.",
-            found or None,
-        )
+        for number in range(first, last + 1):
+            if clock() - started >= deadline_s:
+                truncated = True
+                break
+            scanned += 1
+            try:
+                block = bytes(prober.read_block(number, SIGNATURE_OFFSET, len(SIGNATURE)))
+            except Exception as error:
+                # A read fails either because that DB is not there or because the
+                # link died, and only the second one is worth stopping for.
+                if not prober.connected():
+                    lost = describe_error(error)
+                    truncated = True
+                    break
+                continue
+            answered += 1
+            if block == SIGNATURE:
+                found.append(number)
+            elif sample is None:
+                # Kept so a range full of foreign DBs can say what it did find.
+                sample = (number, block)
     finally:
         try:
             prober.close()
         except Exception:
-            # A socket that refuses to close must not hide the scan result.
+            # A socket that refuses to close must not hide the sweep result.
             pass
+
+    if lost is not None:
+        message = f"A conexão com o CLP caiu durante a varredura, no DB {scanned}."
+        if found:
+            message += f" {len(found)} DB já haviam sido confirmados e estão listados."
+        return DBScan(
+            PROBE_UNREACHABLE, message, tuple(found), scanned, answered,
+            truncated=True, detail=lost,
+        )
+
+    if found:
+        listed = ", ".join(str(number) for number in found[:REPORTED_DB_LIMIT])
+        if len(found) > REPORTED_DB_LIMIT:
+            listed += f" e mais {len(found) - REPORTED_DB_LIMIT}"
+        message = f"Assinatura {SIGNATURE_TEXT} em {len(found)} DB: {listed}."
+        if truncated:
+            # A partial sweep must never read as the whole answer.
+            message += " A varredura foi interrompida antes do fim da faixa."
+        return DBScan(PROBE_READY, message, tuple(found), scanned, answered, truncated)
+
+    detail = None
+    if answered and sample is not None:
+        number, block = sample
+        detail = f"DB {number}: {readable_signature(block) or 'vazio'}"
+    if answered:
+        message = (
+            f"O CLP respondeu, mas nenhuma DB entre {first} e {last} tem a assinatura "
+            f"{SIGNATURE_TEXT} no byte {SIGNATURE_OFFSET}. {answered} DBs aceitaram a leitura."
+        )
+    else:
+        message = (
+            f"O CLP respondeu, mas nenhuma DB entre {first} e {last} aceitou a leitura. "
+            "Confira a faixa de números usada no CLP."
+        )
+    if truncated:
+        message += " A varredura foi interrompida antes do fim da faixa."
+    return DBScan(PROBE_UNSIGNED, message, (), scanned, answered, truncated, detail)
 
 
 class Snap7ProbeClient:
@@ -322,6 +387,11 @@ class Snap7ProbeClient:
     def read_block(self, db_number: int, start: int, size: int) -> bytes:
         return bytes(self._client.db_read(db_number, start, size))
 
+    def connected(self) -> bool:
+        # Not exact: the library warns this can still say True on a dead link, so
+        # it is only used to tell a missing DB apart from a lost connection.
+        return self._client is not None and self._client.get_connected()
+
     def close(self) -> None:
         client, self._client = self._client, None
         if client is not None:
@@ -329,22 +399,32 @@ class Snap7ProbeClient:
 
 
 class FakePLCProbeClient:
-    """Simulator for the scan, so the flow can be explored with no PLC on the desk."""
+    """Simulator for the sweep, so the flow can be explored with no PLC on the desk."""
 
     def __init__(self, signature: bytes = SIGNATURE, reachable: bool = True,
-                 databases: tuple[int, ...] = (1,)) -> None:
+                 databases: tuple[int, ...] = (1,), drop_at: int | None = None) -> None:
         self.signature = signature
         self.reachable = reachable
         self.databases = databases
+        # DB number where the simulated link dies, for the partial sweep tests.
+        self.drop_at = drop_at
+        self._lost = False
 
     def open(self) -> None:
         if not self.reachable:
             raise ConnectionError("Fake PLC unreachable")
+        self._lost = False
 
     def read_block(self, db_number: int, start: int, size: int) -> bytes:
+        if self._lost or (self.drop_at is not None and db_number >= self.drop_at):
+            self._lost = True
+            raise ConnectionError("Fake PLC connection lost")
         if db_number not in self.databases:
             raise RuntimeError("CPU : Address out of range")
         return self.signature[:size].ljust(size, b"\x00")
+
+    def connected(self) -> bool:
+        return self.reachable and not self._lost
 
     def close(self) -> None:
         pass
