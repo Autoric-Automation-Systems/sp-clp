@@ -119,7 +119,8 @@ app/library/
     mitsubishi/SP-CLP.gxw
 ```
 
-- **Tudo o que estiver dentro de um diretório de família é oferecido**, com qualquer extensão, porque as ferramentas de CLP batizam o arquivo com a própria versão: o TIA Portal escreve `.zal` em versões antigas e `SP-CLP.zal17` na V17. O nome do arquivo é o do pacote exportado; o prefixo `FB_` fica só no nome do bloco, dentro do pacote
+- **Tudo o que estiver dentro de um diretório de família é oferecido**, com qualquer extensão, porque as ferramentas de CLP batizam o arquivo com a própria versão: o TIA Portal escreve `.zal` em versões antigas e `SP-CLP_20260928_1642.zal17` na V17, com data e hora do export. O nome do arquivo é o do pacote exportado; o prefixo `FB_` fica só no nome do bloco, dentro do pacote
+- **Os arquivos são versionados no repositório**, junto com o código: o painel e o bloco precisam andar juntos, e um build sem a biblioteca gera um instalador que não entrega o bloco ao cliente. São cerca de 300 KB por versão
 - A pasta entra no executável pelo `--add-data` de `scripts/build_windows.ps1`, então **trocar a biblioteca exige gerar o `.exe` de novo**
 - O nome amigável de cada família está em `FAMILY_LABELS`, em `app/libraries.py`; uma pasta não listada aparece com o próprio nome
 - Arquivos começando com ponto são ignorados, que é como uma pasta vazia sobrevive ao `git` (`.gitkeep`)
