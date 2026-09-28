@@ -1602,50 +1602,54 @@ def test_library_lists_nothing_when_the_build_carries_none(tmp_path, monkeypatch
     monkeypatch.setattr(libraries, "BUNDLED_DIR", tmp_path)
     assert TestClient(app).get("/api/library").json() == {"files": []}
     # The help page must never offer a download that would fail.
-    assert TestClient(app).get("/api/library/s7/FB_SP-CLP.zal").status_code == 404
+    assert TestClient(app).get("/api/library/s7/SP-CLP.zal").status_code == 404
 
 
 def test_library_lists_every_file_of_every_family(tmp_path, monkeypatch):
     from app import libraries
 
     (tmp_path / "s7").mkdir()
-    (tmp_path / "s7" / "FB_SP-CLP.zal17").write_bytes(b"PK\x03\x04versao-17")
-    (tmp_path / "s7" / "FB_SP-CLP.zal").write_bytes(b"PK\x03\x04antiga")
+    (tmp_path / "s7" / "SP-CLP.zal17").write_bytes(b"PK\x03\x04versao-17")
+    (tmp_path / "s7" / "SP-CLP.zal16").write_bytes(b"PK\x03\x04versao-16")
+    (tmp_path / "s7" / "SP-CLP.zal").write_bytes(b"PK\x03\x04antiga")
     (tmp_path / "mitsubishi").mkdir()
     (tmp_path / "mitsubishi" / "SP-CLP.gxw").write_bytes(b"outro-clp")
     monkeypatch.setattr(libraries, "BUNDLED_DIR", tmp_path)
 
     body = TestClient(app).get("/api/library").json()
+    # Several versions of the same block live side by side, as they will in the
+    # folder once the customer keeps more than one TIA release.
     assert [(item["family"], item["filename"]) for item in body["files"]] == [
         ("mitsubishi", "SP-CLP.gxw"),
-        ("s7", "FB_SP-CLP.zal"),
-        ("s7", "FB_SP-CLP.zal17"),
+        ("s7", "SP-CLP.zal"),
+        ("s7", "SP-CLP.zal16"),
+        ("s7", "SP-CLP.zal17"),
     ]
     # Known families get a name a customer can read; the rest show their folder.
     labels = {item["family"]: item["label"] for item in body["files"]}
     assert labels == {"s7": "Siemens S7", "mitsubishi": "mitsubishi"}
-    versions = {item["filename"]: item["size_bytes"] for item in body["files"]}
-    assert versions["FB_SP-CLP.zal17"] == len(b"PK\x03\x04versao-17")
+    sizes = {item["filename"]: item["size_bytes"] for item in body["files"]}
+    assert sizes["SP-CLP.zal17"] == len(b"PK\x03\x04versao-17")
 
 
 def test_library_offers_a_versioned_tia_export(tmp_path, monkeypatch):
-    """TIA Portal writes .zal17 for V17, which a *.zal rule would have missed."""
+    """TIA Portal writes SP-CLP.zal17 for V17, which a *.zal rule would have missed."""
     from app import libraries
 
     (tmp_path / "s7").mkdir()
-    (tmp_path / "s7" / "FB_SP-CLP.zal17").write_bytes(b"PK\x03\x04")
+    (tmp_path / "s7" / "SP-CLP.zal17").write_bytes(b"PK\x03\x04")
     monkeypatch.setattr(libraries, "BUNDLED_DIR", tmp_path)
 
     item = TestClient(app).get("/api/library").json()["files"][0]
-    assert item["filename"] == "FB_SP-CLP.zal17"
-    assert item["url"] == "/api/library/s7/FB_SP-CLP.zal17"
+    assert item["filename"] == "SP-CLP.zal17"
+    assert item["url"] == "/api/library/s7/SP-CLP.zal17"
 
     response = TestClient(app).get(item["url"])
     assert response.status_code == 200
     assert response.content == b"PK\x03\x04"
     disposition = response.headers["content-disposition"]
     assert "attachment" in disposition
-    assert "FB_SP-CLP.zal17" in disposition
+    assert "SP-CLP.zal17" in disposition
 
 
 def test_library_ignores_dotfiles_and_stray_folders(tmp_path, monkeypatch):
@@ -1665,7 +1669,7 @@ def test_library_refuses_a_path_outside_the_folders(tmp_path, monkeypatch):
     from app import libraries
 
     (tmp_path / "s7").mkdir()
-    (tmp_path / "s7" / "FB_SP-CLP.zal17").write_bytes(b"PK\x03\x04")
+    (tmp_path / "s7" / "SP-CLP.zal17").write_bytes(b"PK\x03\x04")
     (tmp_path / "segredo.txt").write_text("nao e para sair")
     monkeypatch.setattr(libraries, "BUNDLED_DIR", tmp_path)
 
@@ -1674,8 +1678,8 @@ def test_library_refuses_a_path_outside_the_folders(tmp_path, monkeypatch):
         "/api/library/s7/..%2F..%2Fsegredo.txt",
         "/api/library/../segredo.txt",
         "/api/library//segredo.txt",
-        "/api/library/s7/FB_SP-CLP.zal",
-        "/api/library/nao-existe/FB_SP-CLP.zal17",
+        "/api/library/s7/SP-CLP.zal",
+        "/api/library/nao-existe/SP-CLP.zal17",
     ):
         assert TestClient(app).get(url).status_code == 404, url
 
@@ -1684,7 +1688,9 @@ def test_help_page_lists_the_library_files():
     page = TestClient(app).get("/").text
     assert "9. BIBLIOTECA" in page
     assert "Abrir biblioteca global" in page
+    # The block keeps its FB_ name; the exported file does not carry it.
     assert "FB_SP-CLP" in page
+    assert "SP-CLP.zal17" in page
     assert 'id="library-files"' in page
     # The rows are built in app.js, so the list must wait for the endpoint.
     assert "loadLibrary" in TestClient(app).get("/static/app.js").text

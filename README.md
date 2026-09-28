@@ -114,11 +114,12 @@ Um diretório por família de CLP, porque a instalação pode atender mais de um
 
 ```
 app/library/
-    s7/FB_SP-CLP.zal17
+    s7/SP-CLP.zal17
+    s7/SP-CLP.zal16
     mitsubishi/SP-CLP.gxw
 ```
 
-- **Tudo o que estiver dentro de um diretório de família é oferecido**, com qualquer extensão, porque as ferramentas de CLP batizam o arquivo com a própria versão: o TIA Portal escreve `.zal` em versões antigas e `.zal17` na V17
+- **Tudo o que estiver dentro de um diretório de família é oferecido**, com qualquer extensão, porque as ferramentas de CLP batizam o arquivo com a própria versão: o TIA Portal escreve `.zal` em versões antigas e `SP-CLP.zal17` na V17. O nome do arquivo é o do pacote exportado; o prefixo `FB_` fica só no nome do bloco, dentro do pacote
 - A pasta entra no executável pelo `--add-data` de `scripts/build_windows.ps1`, então **trocar a biblioteca exige gerar o `.exe` de novo**
 - O nome amigável de cada família está em `FAMILY_LABELS`, em `app/libraries.py`; uma pasta não listada aparece com o próprio nome
 - Arquivos começando com ponto são ignorados, que é como uma pasta vazia sobrevive ao `git` (`.gitkeep`)

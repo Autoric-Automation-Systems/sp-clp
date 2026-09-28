@@ -5,7 +5,10 @@ by guessing a URL, and scripts/build_windows.ps1 carries them into the executabl
 One folder per PLC family, because an installation may serve more than one brand
 over time:
 
-    app/library/s7/FB_SP-CLP.zal17
+    app/library/s7/SP-CLP.zal17
+
+The exported file is named after the package, so it carries the TIA Portal release
+instead of the FB_ prefix the block has inside the package.
 """
 
 from __future__ import annotations
