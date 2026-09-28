@@ -24,13 +24,7 @@ let editorSignals = [];
 let cachedMachines = [];
 let cachedAreas = [];
 let lastItems = [];
-// Hourly totals only change once per hour, so they are fetched on demand instead of
-// riding the 5 s status poll. Every refresh rebuilds the cards, so the open state and
-// the fetched rows are kept outside the markup.
-const hourlyRows = new Map();
-const hourlyOpen = new Set();
 const signalsOpen = new Set();
-const HOURLY_VISIBLE = 8;
 
 // Static <svg data-icon="..."> placeholders in index.html are filled from icons.js.
 // Templates rendered by this file call icon() directly.
@@ -87,31 +81,9 @@ function firstOfKind(status, kind) {
   return signalsOfKind(status, kind)[0] || null;
 }
 
-function hourLabel(localHour, newestDate) {
-  const date = localHour.slice(0, 10);
-  const time = localHour.slice(11, 16);
-  return date === newestDate ? time : `${date.slice(8, 10)}/${date.slice(5, 7)} ${time}`;
-}
-
 function hourlySection(machine) {
-  const open = hourlyOpen.has(machine.id);
-  const rows = hourlyRows.get(machine.id);
-  let body = '';
-  if (open) {
-    if (rows === 'loading') {
-      body = '<p class="hourly-note">Carregando...</p>';
-    } else if (!rows || rows.length === 0) {
-      body = '<p class="hourly-note">Sem historico horario registrado.</p>';
-    } else {
-      const newestDate = rows[0].local_hour.slice(0, 10);
-      const items = rows.slice(0, HOURLY_VISIBLE).map(function (row) {
-        return `<li><span>${hourLabel(row.local_hour, newestDate)}</span><b>${row.quantity}</b></li>`;
-      }).join('');
-      body = `<ol class="hourly-list">${items}</ol>`;
-    }
-  }
-  const action = open ? 'Ocultar' : 'Ver';
-  return `<div class="hourly"><button type="button" class="hourly-toggle" data-hourly-id="${machine.id}" aria-expanded="${open}"><span class="toggle-label">${icon('clock')}${action} contagens por hora</span>${icon(open ? 'chevron-up' : 'chevron-down')}</button>${body}</div>`;
+  // The totals live in a window of their own, so this button only opens it.
+  return `<div class="hourly"><button type="button" class="chart-open" data-chart-id="${machine.id}"><span class="toggle-label">${icon('clock')}Contagens por hora</span>${icon('arrow-right')}</button></div>`;
 }
 
 function signalsSection(machine, status) {
@@ -194,8 +166,8 @@ async function refresh() {
 }
 
 function bindToggles() {
-  document.querySelectorAll('.hourly-toggle').forEach(function (button) {
-    button.onclick = function () { toggleHourly(Number(button.dataset.hourlyId)); };
+  document.querySelectorAll('.chart-open').forEach(function (button) {
+    button.onclick = function () { openChart(Number(button.dataset.chartId)); };
   });
   document.querySelectorAll('.signals-toggle').forEach(function (button) {
     button.onclick = function () { toggleSignals(Number(button.dataset.signalsId)); };
@@ -232,25 +204,99 @@ function toggleSignals(machineId) {
   renderCards();
 }
 
-async function loadHourly(machineId) {
-  const cached = hourlyRows.get(machineId);
-  if (cached && cached !== 'loading') return;
-  hourlyRows.set(machineId, 'loading');
-  renderCards();
-  const response = await request('/api/machines/' + machineId + '/hourly-counts');
-  hourlyRows.set(machineId, response.ok ? await response.json() : []);
-  renderCards();
+// Hourly totals open a small window with one bar per hour of a chosen day.
+let chartMachine = null;
+let chartDay = null;
+let chartData = null;
+
+function shiftDay(day, delta) {
+  const moment = new Date(day + 'T12:00:00Z');
+  moment.setUTCDate(moment.getUTCDate() + delta);
+  return moment.toISOString().slice(0, 10);
 }
 
-function toggleHourly(machineId) {
-  if (hourlyOpen.has(machineId)) {
-    hourlyOpen.delete(machineId);
-    renderCards();
+function formatDay(day, today) {
+  const stamp = day.slice(8, 10) + '/' + day.slice(5, 7) + '/' + day.slice(0, 4);
+  return day === today ? stamp + ' (hoje)' : stamp;
+}
+
+function chartMarkup(data) {
+  const slots = data.slots || [];
+  const highest = Math.max(1, ...slots.map(function (slot) { return slot.quantity; }));
+  const width = 760;
+  const height = 260;
+  const left = 46;
+  const right = 12;
+  const top = 16;
+  const bottom = 28;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const step = plotWidth / Math.max(1, slots.length);
+  const barWidth = Math.max(3, step * 0.62);
+  let body = '';
+  for (let line = 0; line <= 4; line += 1) {
+    const y = top + (plotHeight / 4) * line;
+    body += `<line class="chart-grid" x1="${left}" x2="${width - right}" y1="${y}" y2="${y}"/>`;
+    body += `<text class="chart-axis" x="${left - 8}" y="${y + 4}" text-anchor="end">${Math.round(highest - (highest / 4) * line)}</text>`;
+  }
+  slots.forEach(function (slot, index) {
+    const barHeight = (slot.quantity / highest) * plotHeight;
+    const x = left + step * index + (step - barWidth) / 2;
+    const y = top + plotHeight - barHeight;
+    const hour = slot.local_hour.slice(11, 13);
+    body += `<rect class="chart-bar${slot.quantity ? '' : ' empty'}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(0, barHeight).toFixed(1)}" rx="2"><title>${hour}:00 — ${slot.quantity}</title></rect>`;
+    if (index % 3 === 0) {
+      body += `<text class="chart-axis" x="${(left + step * index + step / 2).toFixed(1)}" y="${height - 8}" text-anchor="middle">${hour}</text>`;
+    }
+  });
+  return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Contagens por hora em ${esc(data.day)}">${body}</svg>`;
+}
+
+function renderChart() {
+  const dialogTitle = document.querySelector('#chart-title');
+  dialogTitle.textContent = chartMachine ? chartMachine.name : 'Contagens';
+  const body = document.querySelector('#chart-body');
+  if (!chartData) {
+    body.innerHTML = '';
     return;
   }
-  hourlyOpen.add(machineId);
-  renderCards();
-  loadHourly(machineId);
+  const total = chartData.slots.reduce(function (sum, slot) { return sum + slot.quantity; }, 0);
+  document.querySelector('#chart-day').textContent = formatDay(chartData.day, chartData.today);
+  document.querySelector('#chart-total').textContent = total === 1 ? '1 caixa no dia' : total + ' caixas no dia';
+  body.innerHTML = chartMarkup(chartData);
+  document.querySelector('#chart-prev').disabled = chartData.day <= chartData.first_day;
+  document.querySelector('#chart-next').disabled = chartData.day >= chartData.last_day;
+}
+
+async function loadChart() {
+  const query = chartDay ? '?day=' + encodeURIComponent(chartDay) : '';
+  const response = await request('/api/machines/' + chartMachine.id + '/hourly-counts' + query);
+  const target = document.querySelector('#chart-message');
+  if (!response.ok) {
+    target.textContent = 'Não foi possível carregar as contagens deste dia.';
+    return;
+  }
+  target.textContent = '';
+  chartData = await response.json();
+  chartDay = chartData.day;
+  renderChart();
+}
+
+async function openChart(machineId) {
+  const machine = cachedMachines.find(function (item) { return item.id === machineId; });
+  if (!machine) return;
+  chartMachine = machine;
+  chartDay = null;
+  chartData = null;
+  document.querySelector('#chart-body').innerHTML = '';
+  document.querySelector('#chart-dialog').showModal();
+  await loadChart();
+}
+
+function stepChart(delta) {
+  if (!chartData) return;
+  chartDay = shiftDay(chartData.day, delta);
+  loadChart();
 }
 
 async function setupStatus() {
@@ -503,6 +549,17 @@ document.querySelector('#logo-close').onclick = function () {
   document.querySelector('#company-logo').value = '';
   document.querySelector('#logo-dialog').close();
 };
+
+function closeChart() {
+  document.querySelector('#chart-dialog').close();
+}
+
+// A closed dialog keeps the old markup, so drop the day when it goes away.
+for (const id of ['chart-close', 'chart-close-action']) {
+  document.querySelector('#' + id).onclick = closeChart;
+}
+document.querySelector('#chart-prev').onclick = function () { stepChart(-1); };
+document.querySelector('#chart-next').onclick = function () { stepChart(1); };
 
 document.querySelector('#branding-form').onsubmit = async function (event) {
   event.preventDefault();

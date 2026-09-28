@@ -44,6 +44,14 @@ Em **Configurações → Identidade** o cliente define o **nome da empresa** e e
 - **SVG não é aceito**: é um documento que pode executar script na mesma origem do painel
 - Sem logo configurado, o painel usa o ícone que acompanha o aplicativo
 
+## Contagens por hora
+
+O botão **Contagens por hora** de cada máquina abre uma janela com o gráfico de barras de um dia, uma barra por hora. O dia mostrado é o dia atual no fuso da máquina, e a navegação (`Dia anterior` / `Próximo dia`) para no primeiro dia com histórico e em hoje.
+
+- `GET /api/machines/{id}/hourly-counts?day=AAAA-MM-DD` devolve o dia pedido; sem o parâmetro, responde o dia atual
+- A resposta traz `day`, `today`, `first_day`, `last_day` e `slots` (as horas do dia, com quantidade zero onde não houve contagem)
+- Um dia com mudança de horário de verão tem 23 ou 25 horas, e o número de `slots` acompanha isso
+
 ## Endereços
 
 O dashboard mostra um único card com todas as plantas e o status de cada máquina. Cada planta responde no seu próprio endereço, derivado do nome:

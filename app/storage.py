@@ -190,12 +190,33 @@ class Storage:
             )
             return delta
 
-    def hourly_counts(self, machine_id: int) -> list[sqlite3.Row]:
+    def hourly_counts(
+        self, machine_id: int, start: str | None = None, end: str | None = None
+    ) -> list[sqlite3.Row]:
+        """Hourly rows for one machine, optionally inside a UTC range."""
+        query = "SELECT hour_start, quantity FROM hourly_counts WHERE machine_id = ?"
+        params: list[object] = [machine_id]
+        if start is not None:
+            query += " AND hour_start >= ?"
+            params.append(start)
+        if end is not None:
+            query += " AND hour_start < ?"
+            params.append(end)
+        query += " ORDER BY hour_start"
         with self.connect() as connection:
-            return list(connection.execute(
-                "SELECT hour_start, quantity FROM hourly_counts WHERE machine_id = ? ORDER BY hour_start DESC",
+            return list(connection.execute(query, params))
+
+    def hourly_range(self, machine_id: int) -> tuple[str, str] | None:
+        """First and last stored hour marker, or None when there is no history."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT MIN(hour_start) AS first, MAX(hour_start) AS last "
+                "FROM hourly_counts WHERE machine_id = ?",
                 (machine_id,),
-            ))
+            ).fetchone()
+        if row is None or row["first"] is None:
+            return None
+        return row["first"], row["last"]
 
     def signal_labels(self, machine_id: int) -> dict[str, str]:
         with self.connect() as connection:

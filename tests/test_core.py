@@ -291,22 +291,79 @@ def test_hourly_counts_are_reported_in_the_machine_timezone():
     machine_id = app_storage.add_machine(area_id, "Fuso", "fake", 53, "America/Sao_Paulo")
     app_storage.save_sample(machine_id, 100, datetime(2026, 9, 26, 10, 15, tzinfo=timezone.utc))
     app_storage.save_sample(machine_id, 160, datetime(2026, 9, 26, 10, 45, tzinfo=timezone.utc))
-    rows = TestClient(app).get(f"/api/machines/{machine_id}/hourly-counts").json()
-    assert len(rows) == 1, "both samples fall inside the same local hour bucket"
-    assert rows[0]["hour_start"] == "2026-09-26T10:00:00+00:00"
-    assert rows[0]["local_hour"] == "2026-09-26T07:00:00-03:00"
-    assert rows[0]["quantity"] == 60
-    app_storage.delete_machine(machine_id)
+    try:
+        body = TestClient(app).get(
+            f"/api/machines/{machine_id}/hourly-counts?day=2026-09-26"
+        ).json()
+        assert body["day"] == "2026-09-26"
+        assert body["first_day"] == "2026-09-26"
+        assert len(body["slots"]) == 24
+        # 10:15 UTC is 07:15 in Sao Paulo, and both samples share that bucket.
+        assert body["slots"][7]["local_hour"] == "2026-09-26T07:00:00-03:00"
+        assert body["slots"][7]["quantity"] == 60
+        assert sum(slot["quantity"] for slot in body["slots"]) == 60
+    finally:
+        app_storage.delete_machine(machine_id)
+
+
+def test_hourly_counts_answer_only_the_requested_day():
+    area_id = app_storage.add_area("Planta Dia", "Area Dia")
+    machine_id = app_storage.add_machine(area_id, "Dia", "fake", 53, "America/Sao_Paulo")
+    # The first sample only sets the baseline, so it adds no quantity.
+    app_storage.save_sample(machine_id, 10, datetime(2026, 9, 26, 12, 5, tzinfo=timezone.utc))
+    # 01:05 UTC on the 27th is 22:05 of the 26th in Sao Paulo, so this belongs to the 26th.
+    app_storage.save_sample(machine_id, 40, datetime(2026, 9, 27, 1, 5, tzinfo=timezone.utc))
+    # 15:05 UTC is 12:05 on the 27th, so this one belongs to the 27th.
+    app_storage.save_sample(machine_id, 50, datetime(2026, 9, 27, 15, 5, tzinfo=timezone.utc))
+    client = TestClient(app)
+    try:
+        first = client.get(f"/api/machines/{machine_id}/hourly-counts?day=2026-09-26").json()
+        second = client.get(f"/api/machines/{machine_id}/hourly-counts?day=2026-09-27").json()
+        assert sum(slot["quantity"] for slot in first["slots"]) == 30
+        assert sum(slot["quantity"] for slot in second["slots"]) == 10
+        # The day starts and ends on the local clock, not on the UTC one.
+        assert first["slots"][0]["local_hour"] == "2026-09-26T00:00:00-03:00"
+        assert first["slots"][-1]["local_hour"] == "2026-09-26T23:00:00-03:00"
+        # The navigation limits cover every day with data, and never end before today.
+        assert first["first_day"] == "2026-09-26"
+        assert second["first_day"] == "2026-09-26"
+        assert second["last_day"] >= second["today"]
+
+        bad = client.get(f"/api/machines/{machine_id}/hourly-counts?day=ontem")
+        assert bad.status_code == 422
+        assert "AAAA-MM-DD" in bad.json()["detail"]
+    finally:
+        app_storage.delete_machine(machine_id)
+
+
+def test_hourly_counts_default_to_today_in_the_machine_timezone():
+    from app.timezones import today_in
+
+    area_id = app_storage.add_area("Planta Hoje", "Area Hoje")
+    machine_id = app_storage.add_machine(area_id, "Hoje", "fake", 53, "America/Sao_Paulo")
+    try:
+        body = TestClient(app).get(f"/api/machines/{machine_id}/hourly-counts").json()
+        assert body["day"] == today_in("America/Sao_Paulo")
+        assert body["first_day"] == body["last_day"] == body["day"]
+        assert sum(slot["quantity"] for slot in body["slots"]) == 0
+    finally:
+        app_storage.delete_machine(machine_id)
 
 
 def test_hourly_counts_survive_an_unknown_stored_timezone():
     area_id = app_storage.add_area("Planta Fuso", "Area Fuso")
     machine_id = app_storage.add_machine(area_id, "Fuso Invalido", "fake", 53, "Marte/Olympus")
-    app_storage.save_sample(machine_id, 5, datetime(2026, 9, 26, 10, 15, tzinfo=timezone.utc))
-    response = TestClient(app).get(f"/api/machines/{machine_id}/hourly-counts")
-    assert response.status_code == 200
-    assert response.json()[0]["local_hour"] == "2026-09-26T10:00:00+00:00"
-    app_storage.delete_machine(machine_id)
+    app_storage.save_sample(machine_id, 5, datetime(2026, 9, 26, 10, 5, tzinfo=timezone.utc))
+    app_storage.save_sample(machine_id, 12, datetime(2026, 9, 26, 10, 20, tzinfo=timezone.utc))
+    try:
+        body = TestClient(app).get(
+            f"/api/machines/{machine_id}/hourly-counts?day=2026-09-26"
+        ).json()
+        # The unknown zone falls back to UTC, so the bucket stays on hour 10.
+        assert body["slots"][10]["local_hour"] == "2026-09-26T10:00:00+00:00"
+        assert body["slots"][10]["quantity"] == 7
+    finally:
+        app_storage.delete_machine(machine_id)
 
 
 def test_machine_timezone_is_validated_before_saving():
@@ -809,6 +866,15 @@ def test_dashboard_header_carries_the_branding():
     script = TestClient(app).get("/static/app.js").text
     assert "loadBranding()" in script
     assert "applyBranding" in script
+
+
+def test_hourly_chart_window_is_wired():
+    page = TestClient(app).get("/").text
+    for element in ('id="chart-dialog"', 'id="chart-body"', 'id="chart-prev"', 'id="chart-next"', 'id="chart-day"'):
+        assert element in page, f"the chart window is missing {element}"
+    script = TestClient(app).get("/static/app.js").text
+    for hook in ("openChart", "chartMarkup", "stepChart", "shiftDay"):
+        assert hook in script, f"app.js does not wire {hook}"
 
 
 def test_footer_keeps_the_product_mark():

@@ -87,10 +87,17 @@ class SignalLabelInput(BaseModel):
         return cleaned
 
 
-class HourlyCount(BaseModel):
-    hour_start: str
+class HourlySlot(BaseModel):
     local_hour: str
     quantity: int
+
+
+class HourlyDay(BaseModel):
+    day: str
+    today: str
+    first_day: str
+    last_day: str
+    slots: list[HourlySlot]
 
 
 class MachineStatus(BaseModel):

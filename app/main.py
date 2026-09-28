@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -20,7 +21,8 @@ from .branding import (
 from .models import (
     AreaInput,
     BrandingInput,
-    HourlyCount,
+    HourlyDay,
+    HourlySlot,
     LoginRequest,
     LogoUpload,
     MachineInput,
@@ -45,7 +47,7 @@ from .plc import (
 from .security import hash_password, verify_password
 from .slugs import RESERVED_PAGES, plant_name_error, plant_slugs, slugify
 from .storage import Storage
-from .timezones import local_hour
+from .timezones import day_bounds, local_day, resolve_zone, today_in
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -328,19 +330,47 @@ def machine_status(machine_id: int) -> MachineStatus:
         )
 
 
-@app.get("/api/machines/{machine_id}/hourly-counts", response_model=list[HourlyCount])
-def hourly_counts(machine_id: int, _: None = Query(default=None)) -> list[HourlyCount]:
+@app.get("/api/machines/{machine_id}/hourly-counts", response_model=HourlyDay)
+def hourly_counts(machine_id: int, day: str | None = Query(default=None)) -> HourlyDay:
+    """One calendar day of hourly totals, in the machine time zone."""
     machine = storage.get_machine(machine_id)
     if machine is None:
         raise HTTPException(status_code=404, detail=MACHINE_NOT_FOUND)
-    return [
-        HourlyCount(
-            hour_start=row["hour_start"],
-            local_hour=local_hour(row["hour_start"], machine["timezone"]),
-            quantity=row["quantity"],
+    zone_name = machine["timezone"]
+    today = today_in(zone_name)
+    if day is None:
+        day = today
+    else:
+        try:
+            date.fromisoformat(day)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Data inválida; use AAAA-MM-DD") from None
+
+    zone = resolve_zone(zone_name)
+    start, end = day_bounds(day, zone_name)
+    stored = {
+        row["hour_start"]: row["quantity"]
+        for row in storage.hourly_counts(machine_id, start.isoformat(), end.isoformat())
+    }
+    slots: list[HourlySlot] = []
+    cursor = start
+    while cursor < end:
+        slots.append(
+            HourlySlot(
+                local_hour=cursor.astimezone(zone).isoformat(),
+                quantity=stored.get(cursor.isoformat(), 0),
+            )
         )
-        for row in storage.hourly_counts(machine_id)
-    ]
+        cursor += timedelta(hours=1)
+
+    span = storage.hourly_range(machine_id)
+    if span is None:
+        first_day = last_day = today
+    else:
+        first_day = local_day(span[0], zone_name)
+        # Never stop the day navigation before today, even with no history yet.
+        last_day = max(local_day(span[1], zone_name), today)
+    return HourlyDay(day=day, today=today, first_day=first_day, last_day=last_day, slots=slots)
 
 
 def describe_machine_signals(machine_id: int) -> list[SignalDefinition]:

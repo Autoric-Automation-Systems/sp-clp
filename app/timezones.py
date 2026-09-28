@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
@@ -37,3 +37,25 @@ def local_hour(hour_start: str, name: str | None) -> str:
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     return moment.astimezone(resolve_zone(name)).isoformat()
+
+
+def local_day(hour_start: str, name: str | None) -> str:
+    """The calendar day a stored UTC marker falls on, in the machine zone."""
+    return local_hour(hour_start, name)[:10]
+
+
+def today_in(name: str | None) -> str:
+    """Today's date in the machine zone, as YYYY-MM-DD."""
+    return datetime.now(resolve_zone(name)).date().isoformat()
+
+
+def day_bounds(day: str, name: str | None) -> tuple[datetime, datetime]:
+    """UTC range covering one local calendar day, as [start, end).
+
+    A day can be 23 or 25 hours long where daylight saving changes, which is why
+    the caller walks the range hour by hour instead of assuming 24 slots.
+    """
+    zone = resolve_zone(name)
+    start = datetime.fromisoformat(day).replace(tzinfo=zone)
+    end = start + timedelta(days=1)
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
