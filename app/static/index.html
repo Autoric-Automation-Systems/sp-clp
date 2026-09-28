@@ -67,7 +67,7 @@
           <ul>
             <li><strong>Fixo</strong> (com cadeado): os cinco sinais padrão — <code>AUTO</code> (0.0), <code>RUN</code> (0.1), <code>Falha</code> (0.2), <code>Segurança</code> (0.3) e <code>Contador</code> (0.4). Fault e Safety são coisas diferentes: falha da máquina e cadeado de segurança. O nome é do contrato e não muda.</li>
             <li><strong>Renomável</strong>: as posições <code>0.5</code>–<code>0.7</code>, <code>1.0</code>–<code>1.7</code> e os três inteiros <code>2.0</code>, <code>6.0</code> e <code>10.0</code>.</li>
-            <li>Os sinais livres e os três inteiros aparecem no card da máquina em <em>Ver sinais</em>, com o valor lido do CLP.</li>
+            <li>O contador (<code>0.4</code>), os sinais livres e os três inteiros aparecem no card da máquina em <em>Ver sinais</em>, com o valor lido do CLP.</li>
             <li>Cada nome precisa ser <strong>único na máquina</strong>. Maiúsculas e acentos não diferenciam: <em>Portao</em> e <em>Portão</em> contam como repetidos.</li>
             <li>Deixar o campo vazio devolve o nome padrão.</li>
           </ul>
@@ -80,6 +80,7 @@
             <li><strong>Estado de cada bit</strong>: os quatro sinais fixos têm vocabulário próprio. <code>AUTO</code> mostra <em>Automático</em> quando o bit é 1 e <em>Manual</em> quando é 0; <code>RUN</code> mostra <em>Produzindo</em> (1) ou <em>Parado</em> (0); <code>Falha</code> mostra <em>Em falha</em> quando o bit é 1 e <em>Normal</em> quando é 0; <code>Segurança</code> mostra <em>Normal</em> (1) ou <em>Pendente</em> (0). Os sinais livres mostram <em>1 LIGADO</em> ou <em>0 DESLIGADO</em>.</li>
             <li><strong>Sem leitura</strong> significa que o CLP não pôde ser lido — não é o mesmo que bit desligado.</li>
             <li><strong>Contagens por hora</strong>: o botão abre uma janela com o gráfico de barras do dia. Use <em>Dia anterior</em> e <em>Próximo dia</em> para navegar; os limites são o primeiro dia com histórico e hoje.</li>
+            <li>O número grande do card é o <code>Count</code> do DB. Ele <strong>não</strong> vem do bit <code>Contador</code> (<code>0.4</code>): quem soma é o programa do CLP, e o painel só lê.</li>
           </ul>
         </article>
         <article class="panel doc">

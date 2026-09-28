@@ -1568,6 +1568,15 @@ def test_scan_endpoint_rejects_an_unusable_range():
         sessions.discard("test-token-scan-bad-range")
 
 
+def test_the_card_lists_the_counter_bit_beside_the_other_signals():
+    """The counter has no block of its own, so dropping it from the list hides it."""
+    script = TestClient(app).get("/static/app.js").text
+    assert "listedSignals" in script
+    assert "item.kind === 'counter'" in script
+    # The big number is Count from the DB, which is a different thing entirely.
+    assert "CONTADOR ATUAL" in script
+
+
 def test_machine_form_offers_the_sweep():
     page = TestClient(app).get("/").text
     assert 'id="machine-probe"' in page

@@ -116,11 +116,11 @@ function hourlySection(machine) {
   return `<div class="hourly"><button type="button" class="chart-open" data-chart-id="${machine.id}"><span class="toggle-label">${icon('clock')}Contagens por hora</span>${icon('arrow-right')}</button></div>`;
 }
 
-// Everything the operator can name: the free BOOLs and the three DInts. The five
-// standard signals already have their own blocks on the card.
+// Everything that has no block of its own: the free BOOLs, the three DInts and
+// the counter bit. The four status bits are the only signals shown elsewhere.
 function listedSignals(status) {
   return (status.signals || []).filter(function (item) {
-    return item.kind === 'custom' || item.kind === 'integer';
+    return item.kind === 'custom' || item.kind === 'integer' || item.kind === 'counter';
   });
 }
 
