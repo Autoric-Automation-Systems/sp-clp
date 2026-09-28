@@ -14,9 +14,20 @@ from __future__ import annotations
 
 import os
 import socket
+from pathlib import Path
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8000
+
+# The name the operator is invited to bookmark. It has to exist in the Windows
+# resolver (hosts file, or the computer itself renamed to it), which is why the
+# panel checks before advertising it.
+ALIAS = "sp-clp"
+
+HOSTS_FILES = (
+    Path(r"C:\Windows\System32\drivers\etc\hosts"),
+    Path("/etc/hosts"),
+)
 
 # TEST-NET-1 from RFC 5737. Connecting a UDP socket sends nothing; it only makes
 # the system pick the local address it would use to reach the network.
@@ -40,6 +51,36 @@ def machine_name() -> str:
     return name.split(".")[0]
 
 
+def website(host: str, port: int) -> str:
+    """Port 80 needs no suffix, which is what makes http://sp-clp possible."""
+    return f"http://{host}" if port == 80 else f"http://{host}:{port}"
+
+
+def alias_ready() -> bool:
+    """Whether the alias resolves on this machine.
+
+    The hosts file and the computer name are checked directly instead of asking
+    the resolver: a plant network without a DNS server can make a name lookup
+    hang for seconds, and this runs on every help page view.
+    """
+    if machine_name().casefold() == ALIAS.casefold():
+        return True
+    for path in HOSTS_FILES:
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            names = line.split("#", 1)[0].split()[1:]
+            if any(name.casefold() == ALIAS.casefold() for name in names):
+                return True
+    return False
+
+
+def alias_url(port: int | None = None) -> str:
+    return website(ALIAS, port or bind_port())
+
+
 def lan_address() -> str | None:
     probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -60,10 +101,13 @@ def access_urls(port: int | None = None, host: str | None = None) -> list[str]:
     """
     resolved_port = port or bind_port()
     if (host or bind_host()) in {"127.0.0.1", "localhost"}:
-        return [f"http://localhost:{resolved_port}"]
-    urls = [f"http://{machine_name()}:{resolved_port}"]
+        return [website("localhost", resolved_port)]
+    urls: list[str] = []
+    if alias_ready():
+        urls.append(alias_url(resolved_port))
+    urls.append(website(machine_name(), resolved_port))
     address = lan_address()
     if address:
-        urls.append(f"http://{address}:{resolved_port}")
-    urls.append(f"http://localhost:{resolved_port}")
+        urls.append(website(address, resolved_port))
+    urls.append(website("localhost", resolved_port))
     return urls

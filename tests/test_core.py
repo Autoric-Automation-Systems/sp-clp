@@ -925,6 +925,48 @@ def test_bind_port_ignores_a_broken_value():
             os.environ["SP_CLP_PORT"] = previous
 
 
+def test_access_endpoint_reports_the_alias():
+    body = TestClient(app).get("/api/access").json()
+    assert body["alias"] == "sp-clp"
+    assert body["alias_url"].startswith("http://sp-clp")
+    assert isinstance(body["alias_ready"], bool)
+    # The alias is only listed once it answers, so the help page never sends the
+    # operator to an address that would fail.
+    if body["alias_ready"]:
+        assert body["urls"][0] == body["alias_url"]
+    else:
+        assert body["alias_url"] not in body["urls"]
+
+
+def test_alias_is_advertised_only_when_the_name_resolves():
+    from app import access
+
+    assert access.ALIAS == "sp-clp"
+    assert access.website("sp-clp", 8000) == "http://sp-clp:8000"
+    # Port 80 is what removes the suffix, leaving the bare branded address.
+    assert access.website("sp-clp", 80) == "http://sp-clp"
+
+    original = access.machine_name
+    try:
+        access.machine_name = lambda: "SP-CLP"
+        assert access.alias_ready() is True
+        assert access.access_urls(port=8000, host="0.0.0.0")[0] == "http://sp-clp:8000"
+
+        access.machine_name = lambda: "PC-PLANTA"
+        assert access.alias_ready() is False
+        assert "http://sp-clp:8000" not in access.access_urls(port=8000, host="0.0.0.0")
+    finally:
+        access.machine_name = original
+
+
+def test_help_page_offers_the_brand_alias():
+    page = TestClient(app).get("/").text
+    assert 'id="access-alias"' in page
+    assert "Renomear este computador" in page
+    assert "SP_CLP_PORT" in page
+    assert "loadAccess" in TestClient(app).get("/static/app.js").text
+
+
 def test_footer_keeps_the_product_mark():
     page = TestClient(app).get("/").text
     # The client logo takes the header, so the product mark lives in the footer.

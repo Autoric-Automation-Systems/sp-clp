@@ -444,10 +444,17 @@ async function loadAccess() {
   if (!response.ok) return;
   const info = await response.json();
   const list = document.querySelector('#access-addresses');
-  if (!list) return;
-  list.innerHTML = info.urls.map(function (url) {
-    return `<li><a href="${esc(url)}">${esc(url)}</a></li>`;
-  }).join('');
+  if (list) {
+    list.innerHTML = info.urls.map(function (url) {
+      return `<li><a href="${esc(url)}">${esc(url)}</a></li>`;
+    }).join('');
+  }
+  const note = document.querySelector('#access-alias');
+  if (!note) return;
+  note.classList.toggle('ready', Boolean(info.alias_ready));
+  note.textContent = info.alias_ready
+    ? `O apelido ${info.alias} já responde neste computador: ${info.alias_url}`
+    : `O apelido ${info.alias} ainda não responde neste computador; por isso ele não aparece na lista acima.`;
 }
 
 async function loadBranding() {

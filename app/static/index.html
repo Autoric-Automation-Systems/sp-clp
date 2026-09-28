@@ -113,7 +113,13 @@
           <p class="eyebrow">8. ACESSO</p><h3>Onde abrir o painel</h3>
           <p>Salve um destes endereços nos favoritos do navegador. O primeiro funciona para qualquer computador na mesma rede do painel:</p>
           <ul id="access-addresses"><li>Carregando...</li></ul>
-          <p>O nome amigável vem do nome do computador. Para encurtar, por exemplo para <code>http://painel:8000</code>, registre o apelido no arquivo <code>hosts</code> do Windows de quem vai acessar — isso exige permissão de administrador.</p>
+          <p id="access-alias" class="access-alias"></p>
+          <p>Para usar o apelido da marca, o nome precisa existir no Windows de quem acessa. Há dois caminhos, ambos exigindo permissão de administrador uma única vez:</p>
+          <ul>
+            <li><strong>Renomear este computador</strong> para <code>sp-clp</code> (Configurações &gt; Sistema &gt; Renomear). Qualquer máquina da rede passa a enxergar o painel por <code>http://sp-clp:8000</code>.</li>
+            <li><strong>Registrar o apelido</strong> no arquivo <code>hosts</code>, com uma linha <code>127.0.0.1 sp-clp</code> em cada computador que for acessar.</li>
+          </ul>
+          <p>Usando a <strong>porta 80</strong>, o endereço fica sem sufixo e vira só <code>http://sp-clp</code>. A porta se troca pela variável de ambiente <code>SP_CLP_PORT</code>; se ela já estiver ocupada por outro programa, o painel sobe apenas em <code>http://sp-clp:8000</code>.</p>
           <p>Na primeira execução o Windows pode pedir permissão de firewall. <strong>Permita em redes privadas</strong>, senão o painel responde apenas neste computador.</p>
         </article>
       </div>

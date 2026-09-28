@@ -23,6 +23,21 @@ Abra `http://127.0.0.1:8000` no navegador. O dashboard abre mesmo sem senha e se
 
 O executável escuta em **todas as interfaces** (`0.0.0.0:8000`), então o painel também responde pelo nome do computador e pelo IP da rede — é o que permite salvar um favorito amigável (`http://nome-do-pc:8000`) e abrir de outra máquina da planta. A página **Ajuda** mostra os endereços válidos, lidos de `/api/access`.
 
+### Apelido da marca (`http://sp-clp`)
+
+O painel gosta de ser chamado de `sp-clp`, mas o nome precisa existir no Windows para virar endereço. `/api/access` informa `alias`, `alias_url` e `alias_ready`, e a Ajuda só anuncia o apelido quando ele realmente responde neste computador. Dois caminhos, os dois exigindo administrador uma única vez:
+
+- **Renomear o computador** para `sp-clp` — qualquer máquina da rede passa a abrir `http://sp-clp:8000`
+- **Registrar no `hosts`** de quem acessa, com a linha `127.0.0.1 sp-clp` (ou o IP do painel, para acesso remoto)
+
+Com a **porta 80** o endereço fica sem sufixo, só `http://sp-clp`:
+
+```powershell
+$env:SP_CLP_PORT = "80"
+```
+
+O instalador registra o apelido no `hosts` e libera a regra de firewall automaticamente.
+
 Para limitar de novo a este computador, ou trocar a porta, use as variáveis de ambiente:
 
 ```powershell

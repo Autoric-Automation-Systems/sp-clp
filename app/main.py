@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .access import access_urls, bind_host, bind_port, machine_name
+from .access import ALIAS, access_urls, alias_ready, alias_url, bind_host, bind_port, machine_name
 from .branding import (
     COMPANY_NAME_KEY,
     DEFAULT_COMPANY_NAME,
@@ -168,9 +168,13 @@ def remove_branding_logo() -> dict[str, str | None]:
 @app.get("/api/access")
 def get_access() -> dict[str, object]:
     """Public: the help page shows these addresses to whoever opens the panel."""
+    port = bind_port()
     return {
         "hostname": machine_name(),
-        "port": bind_port(),
+        "port": port,
+        "alias": ALIAS,
+        "alias_url": alias_url(port),
+        "alias_ready": alias_ready(),
         "urls": access_urls(),
     }
 
