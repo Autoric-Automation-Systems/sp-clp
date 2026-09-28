@@ -66,10 +66,26 @@ function signalIcon(item) {
   return 'tag';
 }
 
+// Each fixed bit means something different, so the yes/no wording differs: for
+// FAULT and SAFETY a set bit is the healthy state, not the active one.
+const BIT_WORDS = {
+  auto: ['Manual', 'Automático'],
+  run: ['Parado', 'Produzindo'],
+  fault: ['Em falha', 'Normal'],
+  safety: ['Pendente', 'Normal'],
+};
+
+function stateText(item, state) {
+  if (state === 'unknown') return 'Sem leitura';
+  const words = BIT_WORDS[item.kind];
+  if (!words) return item.value ? 'Ativo' : 'Parado';
+  return item.value ? words[1] : words[0];
+}
+
 function statusBlock(item) {
   if (!item) return '';
   const state = stateOf(item);
-  const text = state === 'unknown' ? 'Sem leitura' : item.value ? 'Ativo' : 'Parado';
+  const text = stateText(item, state);
   return `<div class="state ${state}"><span class="state-icon">${icon(signalIcon(item))}</span><div><strong>${text}</strong><small>${esc(item.label)}</small></div></div>`;
 }
 

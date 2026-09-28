@@ -884,6 +884,35 @@ def test_footer_keeps_the_product_mark():
     assert "android-chrome-192x192.png" in page
 
 
+def test_footer_site_link_keeps_the_address_in_the_link():
+    page = TestClient(app).get("/").text
+    assert 'href="https://www.autoric.com.br"' in page
+    assert 'title="Autoric: https://www.autoric.com.br"' in page
+    # The address lives in the link, instead of being printed beside the icon.
+    assert ">www.autoric.com.br<" not in page
+    assert 'data-icon="globe"' in page
+
+
+def test_status_words_follow_what_each_bit_means():
+    script = TestClient(app).get("/static/app.js").text
+    assert "stateText" in script
+    # A set bit is the healthy state for FAULT and SAFETY, so the wording cannot
+    # be the generic "Ativo/Parado" everywhere.
+    for word in ("'Manual'", "'Automático'", "'Produzindo'", "'Em falha'", "'Pendente'"):
+        assert word in script, f"the status vocabulary lost {word}"
+    page = TestClient(app).get("/").text
+    assert "Pendente" in page and "Produzindo" in page
+
+
+def test_header_logo_is_rounded_and_lifts_on_hover():
+    css = TestClient(app).get("/static/styles.css").text
+    assert ".brand:hover .brand-icon" in css
+    assert "transform:scale(" in css
+    base = re.search(r"\.brand-icon\{[^}]*\}", css)
+    assert base is not None
+    assert "border-radius" in base.group(0)
+
+
 def test_logo_crop_tool_is_wired():
     page = TestClient(app).get("/").text
     assert 'id="logo-dialog"' in page
