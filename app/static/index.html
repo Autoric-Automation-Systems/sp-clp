@@ -58,7 +58,7 @@
             <li><strong>Verificar CLP</strong> lê a DB antes de salvar e diz se o endereço responde e se aquela DB é mesmo do SP-CLP. É só leitura: nada é escrito no CLP.</li>
             <li>Para testar sem CLP, use <code>fake</code> como IP: o servidor gera leituras simuladas.</li>
           </ul>
-          <p>O DB do SP-CLP começa com o estado da máquina, tem o contador a partir do byte <code>4</code> e uma <strong>assinatura de 8 caracteres</strong> (<code>SPCLPDB1</code>) a partir do byte <code>8</code>. É essa assinatura que a verificação procura. Sem ela o painel avisa que a DB não é do SP-CLP, o que evita valores sem sentido no dashboard.</p>
+          <p>O DB do SP-CLP começa com o estado da máquina, tem a <strong>assinatura de 5 caracteres</strong> (<code>SPCLP</code>) a partir do byte <code>4</code> e o contador no byte <code>10</code>. É essa assinatura que a verificação procura. Sem ela o painel avisa que a DB não é do SP-CLP, o que evita valores sem sentido no dashboard.</p>
           <p>Declare o bloco com <strong>acesso otimizado desligado</strong>: o painel lê endereços absolutos, e num bloco otimizado essas posições não existem.</p>
         </article>
         <article class="panel doc">

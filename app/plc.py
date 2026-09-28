@@ -47,19 +47,25 @@ EDITABLE_ADDRESSES = frozenset(
 LOCKED_ADDRESSES = frozenset(SIGNAL_ADDRESSES) - EDITABLE_ADDRESSES
 SIGNAL_TYPES = {spec.address: "BOOL" for spec in SIGNAL_LAYOUT}
 
-# The dashboard reads the status word and the counter in one go. The signature
-# block sits right after those bytes, so this layout stays untouched.
-READ_SIZE = 8
-COUNT_OFFSET = 4
-
-# Signature block: 8 ASCII characters that mark a DB as belonging to SP-CLP.
-# A CHAR array is used instead of a numeric magic number because it is readable
-# in TIA Portal and has no byte order to get wrong. The trailing digit is the
-# contract revision.
-SIGNATURE_OFFSET = READ_SIZE
-SIGNATURE_TEXT = "SPCLPDB1"
+# Absolute layout of the customer DB, read from the block in the field:
+#
+#   DBX0.0-1.7   BOOL signals (AUTO, RUN, FAULT, SAFETY and the free positions)
+#   DBX2.0       Counter (BOOL)
+#   DBX4.0-8.0   Type, ARRAY[0..4] OF CHAR = 'S','P','C','L','P'
+#   DBD10.0      Count (DInt, big-endian)
+#
+# The signature is what the configuration scan looks for, so a wrong DB number is
+# caught before the machine is saved. A CHAR array is used instead of a numeric
+# magic number because it is readable in TIA Portal and has no byte order to get
+# wrong. Byte 9 is the alignment gap before the counter.
+SIGNATURE_OFFSET = 4
+SIGNATURE_TEXT = "SPCLP"
 SIGNATURE = SIGNATURE_TEXT.encode("ascii")
-SIGNATURE_VERSION = SIGNATURE_TEXT[-1]
+
+# The dashboard reads the status word, the signature and the counter in one go.
+COUNT_OFFSET = 10
+COUNT_SIZE = 4
+READ_SIZE = COUNT_OFFSET + COUNT_SIZE
 
 # Rack and slot of the CPU the contract targets. The scan uses the same values
 # the dashboard will use once the machine is saved.
@@ -141,7 +147,7 @@ def parse_db(data: bytes) -> PLCReading:
     return PLCReading(
         timestamp=datetime.now(timezone.utc),
         bits={spec.address: bit_value(data, spec.address) for spec in SIGNAL_LAYOUT},
-        count=struct.unpack(">i", data[COUNT_OFFSET:READ_SIZE])[0],
+        count=struct.unpack(">i", data[COUNT_OFFSET:COUNT_OFFSET + COUNT_SIZE])[0],
     )
 
 
@@ -157,7 +163,10 @@ class FakePLCClient:
         # AUTO and RUN set, SAFETY clear of pending, counter counting.
         data[0] = 0b00001011
         data[2] = 0b00000001
-        data[COUNT_OFFSET:READ_SIZE] = self.count.to_bytes(4, "big", signed=True)
+        # The simulator carries the same signature and offsets as the real block,
+        # so a machine registered as "fake" behaves like a prepared PLC.
+        data[SIGNATURE_OFFSET:SIGNATURE_OFFSET + len(SIGNATURE)] = SIGNATURE
+        data[COUNT_OFFSET:COUNT_OFFSET + COUNT_SIZE] = self.count.to_bytes(COUNT_SIZE, "big", signed=True)
         self.count += 1
         return parse_db(bytes(data))
 

@@ -31,8 +31,13 @@ from app.main import app, storage as app_storage
 
 
 def test_parse_standard_layout():
-    data = bytes([0b00000111, 0b10000001, 0b00000001, 0, 0, 0, 0, 42])
-    reading = parse_db(data)
+    data = bytearray(READ_SIZE)
+    data[0] = 0b00000111
+    data[1] = 0b10000001
+    data[2] = 0b00000001
+    data[4:9] = b"SPCLP"
+    data[10:14] = (42).to_bytes(4, "big", signed=True)
+    reading = parse_db(bytes(data))
     assert reading.bits["0.0"] is True
     assert reading.bits["0.1"] is True
     assert reading.bits["0.2"] is True
@@ -43,7 +48,7 @@ def test_parse_standard_layout():
 
 def test_parse_db_reports_every_address_even_with_repeated_labels():
     """Labels are user editable, so readings are keyed by address and never collapse."""
-    reading = parse_db(bytes(8))
+    reading = parse_db(bytes(READ_SIZE))
     assert set(reading.bits) == {spec.address for spec in SIGNAL_LAYOUT}
     assert len(reading.bits) == len(SIGNAL_LAYOUT)
 
@@ -64,7 +69,11 @@ def test_snap7_read_requests_full_standard_contract(monkeypatch):
 
         def db_read(self, db_number, start, size):
             captured["read"] = (db_number, start, size)
-            return bytes([3, 0, 1, 0, 0, 0, 0, 7])
+            data = bytearray(READ_SIZE)
+            data[0] = 3
+            data[2] = 1
+            data[10:14] = (7).to_bytes(4, "big", signed=True)
+            return bytes(data)
 
         def disconnect(self):
             captured["disconnected"] = True
@@ -75,7 +84,8 @@ def test_snap7_read_requests_full_standard_contract(monkeypatch):
 
     reading = Snap7PLCClient("192.168.0.1").read(53)
     assert captured["connection"] == ("192.168.0.1", 0, 1)
-    assert captured["read"] == (53, 0, 8)
+    # One read covers the status word, the signature and the counter.
+    assert captured["read"] == (53, 0, READ_SIZE)
     client = Snap7PLCClient("192.168.0.1")
     client.read(53)
     client.close()
@@ -145,7 +155,11 @@ def test_snap7_client_reuses_connection_for_multiple_dbs(monkeypatch):
             connections.append((ip, rack, slot))
 
         def db_read(self, db_number, start, size):
-            return bytes([3, 0, 1, 0, 0, 0, 0, db_number])
+            data = bytearray(READ_SIZE)
+            data[0] = 3
+            data[2] = 1
+            data[10:14] = db_number.to_bytes(4, "big", signed=True)
+            return bytes(data)
 
         def disconnect(self):
             pass
@@ -1204,15 +1218,34 @@ def test_renaming_a_plant_to_the_same_address_is_still_allowed():
         sessions.discard("test-token-plant-case")
 
 
-def test_signature_sits_after_the_counter():
-    """The signature must not move the status word the dashboard already reads."""
-    from app.plc import SIGNATURE, SIGNATURE_OFFSET, SIGNATURE_TEXT
+def test_layout_matches_the_customer_db():
+    """Guards the offsets read from the block in the field.
 
-    assert READ_SIZE == 8
-    assert SIGNATURE_OFFSET == READ_SIZE
-    assert SIGNATURE == SIGNATURE_TEXT.encode("ascii")
-    assert SIGNATURE_TEXT == "SPCLPDB1"
-    assert len(SIGNATURE_TEXT) == 8
+    DBX2.0 Counter, DBX4.0-8.0 the 'SPCLP' array, DBD10.0 Count. Byte 9 is the
+    alignment gap. A read that misses one of these silently returns other data.
+    """
+    from app.plc import (  # noqa: PLC0415
+        COUNT_OFFSET,
+        COUNT_SIZE,
+        SIGNATURE,
+        SIGNATURE_OFFSET,
+        SIGNATURE_TEXT,
+        SIGNAL_LAYOUT,
+    )
+
+    assert SIGNATURE_OFFSET == 4
+    assert SIGNATURE_TEXT == "SPCLP"
+    assert SIGNATURE == b"SPCLP"
+    assert COUNT_OFFSET == 10
+    assert COUNT_SIZE == 4
+    # 14 bytes: 0..13, the last byte of Count inclusive.
+    assert READ_SIZE == 14
+
+    # The BOOL word must not reach the signature block, and the signature must
+    # end before the counter starts.
+    assert max(int(spec.address.split(".")[0]) for spec in SIGNAL_LAYOUT) == 2
+    assert SIGNATURE_OFFSET + len(SIGNATURE) == 9 < COUNT_OFFSET
+    assert COUNT_OFFSET + COUNT_SIZE == READ_SIZE
 
 
 def _probe(**kwargs):
@@ -1222,9 +1255,11 @@ def _probe(**kwargs):
 
 
 def test_probe_accepts_a_prepared_db():
+    from app.plc import SIGNATURE_TEXT
+
     result = _probe()
     assert result.status == PROBE_READY
-    assert "SPCLPDB1" in result.message
+    assert SIGNATURE_TEXT in result.message
     assert result.detail is None
 
 
@@ -1242,9 +1277,10 @@ def test_probe_tells_a_wrong_db_from_an_unreachable_plc():
 
 
 def test_probe_reports_a_db_that_was_never_prepared():
-    result = _probe(signature=b"OUTRODB1")
+    # The signature is 5 bytes, so a 5 byte value is what the block can hold.
+    result = _probe(signature=b"OUTRO")
     assert result.status == PROBE_UNSIGNED
-    assert result.detail == "OUTRODB1"
+    assert result.detail == "OUTRO"
 
 
 def test_probe_shows_the_signature_it_found():
@@ -1270,7 +1306,7 @@ def test_probe_reads_only_text_out_of_a_mixed_block():
     assert readable_signature(b"SPX\x00\x00\x00\x00\x00") == "SPX"
     assert readable_signature(b"\x00\x01\x02\x03") == ""
     assert readable_signature(b"P\x00\x04\xe2\x00\x00") == "P"
-    assert readable_signature(SIGNATURE) == "SPCLPDB1"
+    assert readable_signature(SIGNATURE) == "SPCLP"
 
 
 def test_probe_never_leaves_the_connection_open():
@@ -1356,7 +1392,7 @@ def test_machine_form_offers_the_scan():
     page = TestClient(app).get("/").text
     assert 'id="machine-probe"' in page
     assert 'id="machine-probe-message"' in page
-    assert "SPCLPDB1" in page
+    assert "SPCLP" in page
     # The button is wired in app.js, and the scan is read only by design.
     script = TestClient(app).get("/static/app.js").text
     assert "probeMachine" in script
