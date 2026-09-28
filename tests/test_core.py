@@ -1134,8 +1134,12 @@ def test_status_words_follow_what_each_bit_means():
     # be the generic "Ativo/Parado" everywhere.
     for word in ("'Manual'", "'Automático'", "'Produzindo'", "'Em falha'", "'Pendente'"):
         assert word in script, f"the status vocabulary lost {word}"
+    # A free signal shows the bit itself instead of a word that has to be
+    # interpreted, so 0 and 1 are never ambiguous on the card.
+    assert "'1 LIGADO'" in script and "'0 DESLIGADO'" in script
     page = TestClient(app).get("/").text
     assert "Pendente" in page and "Produzindo" in page
+    assert "1 LIGADO" in page and "0 DESLIGADO" in page
 
 
 def test_header_logo_is_rounded_and_lifts_on_hover():

@@ -72,6 +72,7 @@ A página **Ajuda** do painel traz o mesmo conteúdo para o cliente.
 - Polaridade dos bits padrão: `AUTO` 1 = automático, 0 = manual; `RUN` 1 = produzindo, 0 = parado; `FAULT` 1 = **em falha**, 0 = normal; `SAFETY` 1 = normal, 0 = pendente
 - Sinais: os 16 BOOLs ocupam `0.0` a `1.7`, sem intervalo
 - Sinais adicionais: posições fixas de `0.5` a `0.7` e de `1.0` a `1.7`; apenas o rótulo é editável
+- Os sinais livres aparecem no card como `1 LIGADO` ou `0 DESLIGADO`, com o bit à vista, porque o nome é do cliente e não há vocabulário combinado
 - `Valor 1`, `Valor 2` e `Valor 3`: `DInt` big-endian em `DB2.0`, `DB6.0` e `DB10.0`, com rótulo editável
 - Cada sinal precisa de um rótulo próprio. A comparação ignora maiúsculas e acentos, e um sinal renomeável também não pode adotar o nome de um sinal padrão
 - Assinatura: `ARRAY[0..4] OF CHAR` em `DBX14.0` com o valor `SPCLP`, usada pela varredura do cadastro

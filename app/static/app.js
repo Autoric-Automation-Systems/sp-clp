@@ -90,7 +90,9 @@ function stateText(item, state) {
   if (state === 'unknown') return 'Sem leitura';
   if (state === 'value') return String(item.value);
   const words = BIT_WORDS[item.kind];
-  if (!words) return item.value ? 'Ativo' : 'Parado';
+  // A free signal has no agreed vocabulary, so it shows the bit itself: the
+  // operator reads 1 or 0 and knows exactly what the PLC is holding.
+  if (!words) return item.value ? '1 LIGADO' : '0 DESLIGADO';
   return item.value ? words[1] : words[0];
 }
 
