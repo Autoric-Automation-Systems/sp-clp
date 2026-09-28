@@ -696,3 +696,177 @@ def test_bit_address_is_only_shown_in_the_signal_list():
     assert 'em class="address"' not in script
     # The expandable signal list keeps it, because that is where it is useful.
     assert 'class="signal-address"' in script
+
+
+def _area_ids(plant_name: str) -> list[int]:
+    return [row["id"] for row in app_storage.list_areas() if row["plant_name"] == plant_name]
+
+
+def test_area_endpoints_require_authentication():
+    client = TestClient(app, raise_server_exceptions=False)
+    assert client.put("/api/config/areas/1", json={"plant_name": "P", "name": "A"}).status_code == 401
+    assert client.delete("/api/config/areas/1").status_code == 401
+    assert client.put("/api/config/plants/P", json={"plant_name": "P2"}).status_code == 401
+
+
+def test_an_area_can_be_edited():
+    area_id = app_storage.add_area("Planta Editavel", "Area Antiga")
+    client = _admin_client("test-token-area-edit")
+    headers = {"Authorization": "Bearer test-token-area-edit"}
+    try:
+        response = client.put(
+            f"/api/config/areas/{area_id}",
+            headers=headers,
+            json={"plant_name": "Planta Editavel", "name": "Area Nova"},
+        )
+        assert response.status_code == 200
+        area = app_storage.get_area(area_id)
+        assert area["name"] == "Area Nova"
+        assert area["plant_name"] == "Planta Editavel"
+    finally:
+        app_storage.delete_area(area_id)
+        from app.main import sessions
+
+        sessions.discard("test-token-area-edit")
+
+
+def test_editing_an_area_cannot_rename_the_plant():
+    area_id = app_storage.add_area("Planta Fixa", "Area Fixa")
+    client = _admin_client("test-token-area-plant")
+    headers = {"Authorization": "Bearer test-token-area-plant"}
+    try:
+        response = client.put(
+            f"/api/config/areas/{area_id}",
+            headers=headers,
+            json={"plant_name": "Outra Planta", "name": "Area Fixa"},
+        )
+        assert response.status_code == 422
+        # One area renamed alone would leave two plants on the same address.
+        assert app_storage.get_area(area_id)["plant_name"] == "Planta Fixa"
+    finally:
+        app_storage.delete_area(area_id)
+        from app.main import sessions
+
+        sessions.discard("test-token-area-plant")
+
+
+def test_area_with_machines_cannot_be_deleted():
+    area_id = app_storage.add_area("Planta Exclusao", "Area Cheia")
+    machine_id = app_storage.add_machine(area_id, "M Area", "fake", 53, "UTC")
+    client = _admin_client("test-token-area-delete")
+    headers = {"Authorization": "Bearer test-token-area-delete"}
+    try:
+        response = client.delete(f"/api/config/areas/{area_id}", headers=headers)
+        assert response.status_code == 409
+        assert "1 máquinas" in response.json()["detail"]
+        assert app_storage.get_area(area_id) is not None
+
+        app_storage.delete_machine(machine_id)
+        assert client.delete(f"/api/config/areas/{area_id}", headers=headers).status_code == 200
+        assert app_storage.get_area(area_id) is None
+        # The plant disappears with its last area.
+        assert "Planta Exclusao" not in app_storage.plant_names()
+    finally:
+        app_storage.delete_machine(machine_id)
+        app_storage.delete_area(area_id)
+        from app.main import sessions
+
+        sessions.discard("test-token-area-delete")
+
+
+def test_renaming_a_plant_moves_every_area_and_its_address():
+    first = app_storage.add_area("Planta Renomear", "Area Um")
+    second = app_storage.add_area("Planta Renomear", "Area Dois")
+    client = _admin_client("test-token-plant-rename")
+    headers = {"Authorization": "Bearer test-token-plant-rename"}
+    try:
+        assert client.get("/Planta-Renomear").status_code == 200
+        response = client.put(
+            "/api/config/plants/Planta-Renomear",
+            headers=headers,
+            json={"plant_name": "Planta Nova"},
+        )
+        assert response.status_code == 200
+        assert response.json()["areas"] == 2
+        assert app_storage.get_area(first)["plant_name"] == "Planta Nova"
+        assert app_storage.get_area(second)["plant_name"] == "Planta Nova"
+        # The old address stops answering and the new one takes over.
+        assert client.get("/Planta-Renomear").status_code == 404
+        assert client.get("/Planta-Nova").status_code == 200
+        assert client.get("/plaNTA-nova").status_code == 200
+    finally:
+        app_storage.delete_area(first)
+        app_storage.delete_area(second)
+        from app.main import sessions
+
+        sessions.discard("test-token-plant-rename")
+
+
+def test_plant_names_must_own_a_usable_address():
+    client = _admin_client("test-token-plant-clash")
+    headers = {"Authorization": "Bearer test-token-plant-clash"}
+    areas: list[int] = []
+    try:
+        # "Rio Claro" and "rio-claro" reduce to the same address.
+        areas.append(app_storage.add_area("colisao base", "Area Um"))
+        response = client.post(
+            "/api/config/areas",
+            headers=headers,
+            json={"plant_name": "colisao-base", "name": "Area Dois"},
+        )
+        assert response.status_code == 422
+        assert "colisao base" in response.json()["detail"]
+
+        # A name that cannot become an address at all.
+        response = client.post(
+            "/api/config/areas",
+            headers=headers,
+            json={"plant_name": "!!!", "name": "Area Tres"},
+        )
+        assert response.status_code == 422
+        assert "letra ou número" in response.json()["detail"]
+
+        # Menu pages are not available as plant addresses.
+        response = client.post(
+            "/api/config/areas",
+            headers=headers,
+            json={"plant_name": "Ajuda", "name": "Area Quatro"},
+        )
+        assert response.status_code == 422
+        assert "reservado" in response.json()["detail"]
+
+        # Renaming onto an address that is already taken is refused too.
+        areas.append(app_storage.add_area("colisao alvo", "Area Cinco"))
+        response = client.put(
+            "/api/config/plants/colisao-alvo",
+            headers=headers,
+            json={"plant_name": "Colisao Base"},
+        )
+        assert response.status_code == 422
+    finally:
+        for area_id in areas:
+            app_storage.delete_area(area_id)
+        from app.main import sessions
+
+        sessions.discard("test-token-plant-clash")
+
+
+def test_renaming_a_plant_to_the_same_address_is_still_allowed():
+    area_id = app_storage.add_area("Rio Verde", "Area Rio")
+    client = _admin_client("test-token-plant-case")
+    headers = {"Authorization": "Bearer test-token-plant-case"}
+    try:
+        # Only the spelling changes, so the address is unchanged and valid.
+        response = client.put(
+            "/api/config/plants/Rio-Verde",
+            headers=headers,
+            json={"plant_name": "Rio verde"},
+        )
+        assert response.status_code == 200
+        assert app_storage.get_area(area_id)["plant_name"] == "Rio verde"
+        assert client.get("/Rio-Verde").status_code == 200
+    finally:
+        app_storage.delete_area(area_id)
+        from app.main import sessions
+
+        sessions.discard("test-token-plant-case")

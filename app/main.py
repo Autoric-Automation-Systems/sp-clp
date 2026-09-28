@@ -14,6 +14,7 @@ from .models import (
     LoginRequest,
     MachineInput,
     MachineStatus,
+    PlantRenameInput,
     SetupPassword,
     SignalDefinition,
     SignalLabelInput,
@@ -31,7 +32,7 @@ from .plc import (
     signal_label,
 )
 from .security import hash_password, verify_password
-from .slugs import RESERVED_PAGES, plant_slugs, slugify
+from .slugs import RESERVED_PAGES, plant_name_error, plant_slugs, slugify
 from .storage import Storage
 from .timezones import local_hour
 
@@ -46,6 +47,7 @@ logger = logging.getLogger("sp_clp")
 
 # Shown verbatim in the dashboard, so keep the user facing messages accented.
 MACHINE_NOT_FOUND = "Máquina não encontrada"
+AREA_NOT_FOUND = "Área não encontrada"
 
 
 def require_admin(authorization: str | None = Header(default=None)) -> None:
@@ -69,7 +71,11 @@ def dashboard() -> Path:
 
 
 def _known_pages() -> set[str]:
-    return {slug.casefold() for slug in plant_slugs({machine["plant_name"] for machine in storage.list_machines()})}
+    """Addresses served by the single segment route.
+
+    A plant answers as soon as it has an area, even before any machine exists.
+    """
+    return {slug.casefold() for slug in plant_slugs(storage.plant_names())}
 
 
 @app.get("/{page}", response_class=FileResponse)
@@ -107,14 +113,75 @@ def login(payload: LoginRequest) -> dict[str, str]:
     return {"token": token}
 
 
+def _other_plant_names(plant_name: str) -> set[str]:
+    """Every plant except the one being written, for the address clash check."""
+    return {name for name in storage.plant_names() if name != plant_name}
+
+
 @app.post("/api/config/areas", status_code=201, dependencies=[Depends(require_admin)])
 def create_area(payload: AreaInput) -> dict[str, int]:
+    error = plant_name_error(payload.plant_name, _other_plant_names(payload.plant_name))
+    if error:
+        raise HTTPException(status_code=422, detail=error)
     return {"id": storage.add_area(payload.plant_name, payload.name)}
 
 
 @app.get("/api/config/areas", dependencies=[Depends(require_admin)])
 def list_areas() -> list[dict]:
-    return [dict(row) for row in storage.list_areas()]
+    # plant_slug lets the dashboard link and rename a plant without duplicating
+    # the slug rules in JavaScript.
+    return [
+        {**dict(row), "plant_slug": slugify(row["plant_name"])}
+        for row in storage.list_areas()
+    ]
+
+
+@app.put("/api/config/areas/{area_id}", dependencies=[Depends(require_admin)])
+def update_area(area_id: int, payload: AreaInput) -> dict[str, int]:
+    """Edit an area.
+
+    The plant name cannot change here: a plant is the set of areas sharing the
+    name, so renaming one area would leave two plants fighting over the same
+    address. The plant endpoint renames all of them together.
+    """
+    area = storage.get_area(area_id)
+    if area is None:
+        raise HTTPException(status_code=404, detail=AREA_NOT_FOUND)
+    if payload.plant_name != area["plant_name"]:
+        raise HTTPException(
+            status_code=422,
+            detail="Para mudar o nome da planta use o painel Planta; isso renomeia todas as áreas dela",
+        )
+    storage.update_area(area_id, area["plant_name"], payload.name)
+    return {"id": area_id}
+
+
+@app.delete("/api/config/areas/{area_id}", dependencies=[Depends(require_admin)])
+def remove_area(area_id: int) -> None:
+    if storage.get_area(area_id) is None:
+        raise HTTPException(status_code=404, detail=AREA_NOT_FOUND)
+    remaining = storage.machines_in_area(area_id)
+    if remaining:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Exclua as {remaining} máquinas desta área antes de excluir a área",
+        )
+    storage.delete_area(area_id)
+
+
+@app.put("/api/config/plants/{slug}", dependencies=[Depends(require_admin)])
+def rename_plant(slug: str, payload: PlantRenameInput) -> dict[str, int]:
+    """Rename a plant, which in practice renames every area that belongs to it."""
+    plants = plant_slugs(storage.plant_names())
+    current = plants.get(slug.casefold())
+    if current is None:
+        raise HTTPException(status_code=404, detail="Planta não encontrada")
+    # Compare against the name being replaced, so changing only the spelling of
+    # an existing address is allowed.
+    error = plant_name_error(payload.plant_name, _other_plant_names(current))
+    if error:
+        raise HTTPException(status_code=422, detail=error)
+    return {"areas": storage.rename_plant(current, payload.plant_name)}
 
 
 @app.post("/api/config/areas/{area_id}/machines", status_code=201, dependencies=[Depends(require_admin)])

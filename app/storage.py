@@ -92,6 +92,44 @@ class Storage:
         with self.connect() as connection:
             return list(connection.execute("SELECT * FROM areas ORDER BY plant_name, name"))
 
+    def plant_names(self) -> list[str]:
+        with self.connect() as connection:
+            return [
+                row["plant_name"]
+                for row in connection.execute("SELECT DISTINCT plant_name FROM areas")
+            ]
+
+    def update_area(self, area_id: int, plant_name: str, name: str) -> bool:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE areas SET plant_name = ?, name = ? WHERE id = ?",
+                (plant_name, name, area_id),
+            )
+            return cursor.rowcount == 1
+
+    def delete_area(self, area_id: int) -> bool:
+        """Remove one area. Callers must check that no machine is left in it."""
+        with self.connect() as connection:
+            exists = connection.execute("SELECT 1 FROM areas WHERE id = ?", (area_id,)).fetchone()
+            if exists is None:
+                return False
+            connection.execute("DELETE FROM areas WHERE id = ?", (area_id,))
+            return True
+
+    def rename_plant(self, current: str, plant_name: str) -> int:
+        """Rename every area of one plant; a plant exists only through its areas."""
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE areas SET plant_name = ? WHERE plant_name = ?", (plant_name, current)
+            )
+            return cursor.rowcount
+
+    def machines_in_area(self, area_id: int) -> int:
+        with self.connect() as connection:
+            return int(connection.execute(
+                "SELECT COUNT(*) FROM machines WHERE area_id = ?", (area_id,)
+            ).fetchone()[0])
+
     def add_machine(self, area_id: int, name: str, ip: str, db_number: int, timezone_name: str) -> int:
         with self.connect() as connection:
             cursor = connection.execute(

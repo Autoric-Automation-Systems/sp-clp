@@ -18,9 +18,11 @@ const menu = document.querySelector('#main-menu');
 const menuBackdrop = document.querySelector('#menu-backdrop');
 let token = null;
 let editingMachineId = null;
+let editingAreaId = null;
 let editingLabelsFor = null;
 let editorSignals = [];
 let cachedMachines = [];
+let cachedAreas = [];
 let lastItems = [];
 // Hourly totals only change once per hour, so they are fetched on demand instead of
 // riding the 5 s status poll. Every refresh rebuilds the cards, so the open state and
@@ -318,29 +320,73 @@ function navigate(path, options) {
   applyRoute(options);
 }
 
+function machineListItem(machine) {
+  return `<div class="machine-list-item"><span>${esc(machine.name)} - ${esc(machine.ip)} - DB${esc(machine.db_number)}</span><span class="machine-actions"><button type="button" class="labels-machine with-icon" data-machine-id="${machine.id}">${icon('tag')}Sinais</button><button type="button" class="edit-machine with-icon secondary" data-machine-id="${machine.id}">${icon('pencil')}Editar</button><button type="button" class="delete-machine danger with-icon" data-machine-id="${machine.id}">${icon('trash-2')}Excluir</button></span></div>`;
+}
+
+function areaListItem(area, machines) {
+  const label = machines.length === 1 ? '1 máquina' : machines.length + ' máquinas';
+  const rows = machines.map(machineListItem).join('') || '<p class="form-hint">Nenhuma máquina nesta área.</p>';
+  return `<div class="area-item"><div class="list-item"><strong>${esc(area.name)}</strong><span class="list-actions"><span class="list-meta">${esc(label)}</span><button type="button" class="edit-area secondary with-icon" data-area-id="${area.id}">${icon('pencil')}Editar</button><button type="button" class="delete-area danger with-icon" data-area-id="${area.id}">${icon('trash-2')}Excluir</button></span></div>${rows}</div>`;
+}
+
+function plantListItem(plant, machinesByArea) {
+  const areas = plant.areas.map(function (area) {
+    return areaListItem(area, machinesByArea.get(area.id) || []);
+  }).join('');
+  const rename = plant.slug
+    ? `<button type="button" class="rename-plant secondary with-icon" data-plant-slug="${esc(plant.slug)}" data-plant-name="${esc(plant.name)}">${icon('pencil')}Renomear planta</button>`
+    : '';
+  const address = plant.slug ? `/${esc(plant.slug)}` : 'sem endereço';
+  return `<div class="plant-item"><div class="list-item"><strong>${esc(plant.name)}</strong><span class="list-actions"><span class="list-meta">${esc(address)}</span>${rename}</span></div>${areas}</div>`;
+}
+
+function groupAreasByPlant(areas, machines) {
+  const machinesByArea = new Map();
+  machines.forEach(function (machine) {
+    if (!machinesByArea.has(machine.area_id)) machinesByArea.set(machine.area_id, []);
+    machinesByArea.get(machine.area_id).push(machine);
+  });
+  const plants = new Map();
+  areas.forEach(function (area) {
+    if (!plants.has(area.plant_name)) {
+      plants.set(area.plant_name, {name: area.plant_name, slug: area.plant_slug || '', areas: []});
+    }
+    plants.get(area.plant_name).areas.push(area);
+  });
+  return Array.from(plants.values()).map(function (plant) {
+    return plantListItem(plant, machinesByArea);
+  }).join('');
+}
+
 async function loadSettings() {
   if (!token) return;
   settingsLocked.hidden = true;
   settingsContent.hidden = false;
   const response = await request('/api/config/areas');
   if (!response.ok) return;
-  const areas = await response.json();
-  document.querySelector('#area-select').innerHTML = areas.length
-    ? areas.map(function (area) { return `<option value="${area.id}">${esc(area.plant_name)} / ${esc(area.name)}</option>`; }).join('')
+  cachedAreas = await response.json();
+  document.querySelector('#area-select').innerHTML = cachedAreas.length
+    ? cachedAreas.map(function (area) { return `<option value="${area.id}">${esc(area.plant_name)} / ${esc(area.name)}</option>`; }).join('')
     : '<option value="">Crie uma área primeiro</option>';
-  const byArea = cachedMachines.reduce(function (groups, machine) {
-    if (!groups[machine.area_id]) groups[machine.area_id] = [];
-    groups[machine.area_id].push(machine);
-    return groups;
-  }, {});
-  document.querySelector('#area-list').innerHTML = areas.length
-    ? areas.map(function (area) {
-        const list = (byArea[area.id] || []).map(function (machine) {
-          return `<div class="machine-list-item"><span>${esc(machine.name)} - ${esc(machine.ip)} - DB${esc(machine.db_number)}</span><span class="machine-actions"><button type="button" class="labels-machine with-icon" data-machine-id="${machine.id}">${icon('tag')}Sinais</button><button type="button" class="edit-machine with-icon secondary" data-machine-id="${machine.id}">${icon('pencil')}Editar</button><button type="button" class="delete-machine danger with-icon" data-machine-id="${machine.id}">${icon('trash-2')}Excluir</button></span></div>`;
-        }).join('') || '<p class="form-hint">Nenhuma máquina nesta área.</p>';
-        return `<div class="area-item"><div class="list-item"><strong>${esc(area.name)}</strong><span>${esc(area.plant_name)}</span></div>${list}</div>`;
-      }).join('')
+
+  const withSlug = cachedAreas.filter(function (area) { return area.plant_slug; });
+  const seen = new Set();
+  const plants = withSlug.filter(function (area) {
+    if (seen.has(area.plant_slug)) return false;
+    seen.add(area.plant_slug);
+    return true;
+  });
+  const plantSelect = document.querySelector('#plant-select');
+  plantSelect.innerHTML = plants.length
+    ? plants.map(function (area) { return `<option value="${esc(area.plant_slug)}">${esc(area.plant_name)}</option>`; }).join('')
+    : '<option value="">Nenhuma planta com endereço</option>';
+  document.querySelector('#plant-submit').disabled = plants.length === 0;
+
+  document.querySelector('#area-list').innerHTML = cachedAreas.length
+    ? groupAreasByPlant(cachedAreas, cachedMachines)
     : '<p class="form-hint">Nenhuma área cadastrada.</p>';
+
   document.querySelectorAll('.edit-machine').forEach(function (button) {
     button.onclick = function () { beginEdit(Number(button.dataset.machineId)); };
   });
@@ -350,6 +396,57 @@ async function loadSettings() {
   document.querySelectorAll('.delete-machine').forEach(function (button) {
     button.onclick = function () { deleteMachine(Number(button.dataset.machineId)); };
   });
+  document.querySelectorAll('.edit-area').forEach(function (button) {
+    button.onclick = function () { beginAreaEdit(Number(button.dataset.areaId)); };
+  });
+  document.querySelectorAll('.delete-area').forEach(function (button) {
+    button.onclick = function () { deleteArea(Number(button.dataset.areaId)); };
+  });
+  document.querySelectorAll('.rename-plant').forEach(function (button) {
+    button.onclick = function () { beginPlantRename(button.dataset.plantSlug, button.dataset.plantName); };
+  });
+}
+
+function beginAreaEdit(areaId) {
+  const area = cachedAreas.find(function (item) { return item.id === areaId; });
+  if (!area) return;
+  editingAreaId = areaId;
+  document.querySelector('#plant-name').value = area.plant_name;
+  document.querySelector('#plant-name').disabled = true;
+  document.querySelector('#area-name').value = area.name;
+  document.querySelector('#area-form-eyebrow').textContent = 'EDITAR ÁREA';
+  document.querySelector('#area-form-title').textContent = 'Atualizar área';
+  document.querySelector('#area-submit-label').textContent = 'Salvar alterações';
+  document.querySelector('#area-cancel').hidden = false;
+  document.querySelector('#area-form').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function cancelAreaEdit() {
+  editingAreaId = null;
+  document.querySelector('#area-form').reset();
+  document.querySelector('#plant-name').disabled = false;
+  document.querySelector('#area-form-eyebrow').textContent = 'NOVA ÁREA';
+  document.querySelector('#area-form-title').textContent = 'Adicionar área';
+  document.querySelector('#area-submit-label').textContent = 'Salvar área';
+  document.querySelector('#area-cancel').hidden = true;
+}
+
+async function deleteArea(areaId) {
+  const area = cachedAreas.find(function (item) { return item.id === areaId; });
+  if (!area || !confirm('Excluir a área "' + area.name + '"?')) return;
+  const response = await request('/api/config/areas/' + areaId, {method: 'DELETE'});
+  const target = document.querySelector('#area-message');
+  const body = await response.json().catch(function () { return {}; });
+  target.textContent = response.ok ? 'Área excluída.' : (body.detail || 'Não foi possível excluir a área.');
+  if (response.ok) { cancelAreaEdit(); await refresh(); loadSettings(); }
+}
+
+function beginPlantRename(slug, name) {
+  document.querySelector('#plant-select').value = slug;
+  const field = document.querySelector('#plant-rename');
+  field.value = name;
+  document.querySelector('#plant-form').scrollIntoView({behavior: 'smooth', block: 'start'});
+  field.focus();
 }
 
 function beginEdit(machineId) {
@@ -419,9 +516,46 @@ document.querySelector('#login-button').onclick = async function () {
 };
 document.querySelector('#area-form').onsubmit = async function (event) {
   event.preventDefault();
-  const response = await request('/api/config/areas', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({plant_name: document.querySelector('#plant-name').value, name: document.querySelector('#area-name').value})});
-  document.querySelector('#area-message').textContent = response.ok ? 'Área salva.' : (await response.json()).detail;
-  if (response.ok) { event.target.reset(); loadSettings(); }
+  const payload = {
+    plant_name: document.querySelector('#plant-name').value,
+    name: document.querySelector('#area-name').value,
+  };
+  const url = editingAreaId ? '/api/config/areas/' + editingAreaId : '/api/config/areas';
+  const response = await request(url, {
+    method: editingAreaId ? 'PUT' : 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  const target = document.querySelector('#area-message');
+  if (response.ok) {
+    target.textContent = editingAreaId ? 'Área atualizada.' : 'Área salva.';
+    cancelAreaEdit();
+    await refresh();
+    loadSettings();
+  } else {
+    const body = await response.json().catch(function () { return {}; });
+    target.textContent = typeof body.detail === 'string' ? body.detail : 'Não foi possível salvar a área.';
+  }
+};
+document.querySelector('#area-cancel').onclick = cancelAreaEdit;
+document.querySelector('#plant-form').onsubmit = async function (event) {
+  event.preventDefault();
+  const slug = document.querySelector('#plant-select').value;
+  const response = await request('/api/config/plants/' + encodeURIComponent(slug), {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({plant_name: document.querySelector('#plant-rename').value}),
+  });
+  const target = document.querySelector('#plant-message');
+  if (response.ok) {
+    target.textContent = 'Planta renomeada.';
+    document.querySelector('#plant-rename').value = '';
+    await refresh();
+    loadSettings();
+  } else {
+    const body = await response.json().catch(function () { return {}; });
+    target.textContent = typeof body.detail === 'string' ? body.detail : 'Não foi possível renomear a planta.';
+  }
 };
 machineForm.onsubmit = async function (event) {
   event.preventDefault();
