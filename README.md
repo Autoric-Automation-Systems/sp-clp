@@ -69,11 +69,12 @@ A página **Ajuda** do painel traz o mesmo conteúdo para o cliente.
 - Rack padrão: `0`
 - Slot padrão: `1`
 - Sinais padrão: `AUTO` (`0.0`), `RUN` (`0.1`), `FAULT` (`0.2`), `SAFETY` (`0.3`) e `COUNTER` (`0.4`). Fault e Safety são coisas diferentes: falha da máquina e cadeado de segurança. Nome e tipo são do contrato e **não podem ser alterados**
-- Polaridade dos bits padrão: `AUTO` 1 = automático, 0 = manual; `RUN` 1 = produzindo, 0 = parado; `FAULT` 1 = **em falha**, 0 = normal; `SAFETY` 1 = normal, 0 = pendente
+- Polaridade dos bits padrão: `AUTO` 1 = automático, 0 = manual; `RUN` 1 = produzindo, 0 = parado; `FAULT` 1 = **em falha**, 0 = normal; `SAFETY` 1 = normal, 0 = pendente; `COUNTER` 1 = contando, 0 = sem contagem
 - Sinais: os 16 BOOLs ocupam `0.0` a `1.7`, sem intervalo
 - Sinais adicionais: posições fixas de `0.5` a `0.7` e de `1.0` a `1.7`; apenas o rótulo é editável
 - Os sinais livres aparecem no card como `1 LIGADO` ou `0 DESLIGADO`, com o bit à vista, porque o nome é do cliente e não há vocabulário combinado
-- O bit `COUNTER` (`0.4`), os sinais livres e os três inteiros aparecem no card em *Ver sinais*; os outros quatro sinais padrão têm bloco próprio
+- Os sinais livres e os três inteiros aparecem no card em *Ver sinais*; os cinco sinais padrão têm bloco próprio
+- O `COUNTER` é diagnóstico: o CLP conta na **borda de subida** do bit, então o bloco diz se a contagem está acontecendo agora, não quanto já foi contado
 - O número grande do card é o `Count` (`DB20.0`), **não** o bit `COUNTER`: o painel só lê, quem incrementa o `Count` é o programa do CLP
 - `Valor 1`, `Valor 2` e `Valor 3`: `DInt` big-endian em `DB2.0`, `DB6.0` e `DB10.0`, com rótulo editável
 - Cada sinal precisa de um rótulo próprio. A comparação ignora maiúsculas e acentos, e um sinal renomeável também não pode adotar o nome de um sinal padrão

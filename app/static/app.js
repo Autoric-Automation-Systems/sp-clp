@@ -68,6 +68,9 @@ const BIT_WORDS = {
   run: ['Parado', 'Produzindo'],
   fault: ['Normal', 'Em falha'],
   safety: ['Pendente', 'Normal'],
+  // A diagnostic: the logic only counts on the rising edge, so this says whether
+  // counting is happening at all, not how much was counted.
+  counter: ['Sem contagem', 'Contando'],
 };
 
 // FAULT is the odd one out: the bit is set while the machine is in fault, so a
@@ -116,11 +119,11 @@ function hourlySection(machine) {
   return `<div class="hourly"><button type="button" class="chart-open" data-chart-id="${machine.id}"><span class="toggle-label">${icon('clock')}Contagens por hora</span>${icon('arrow-right')}</button></div>`;
 }
 
-// Everything that has no block of its own: the free BOOLs, the three DInts and
-// the counter bit. The four status bits are the only signals shown elsewhere.
+// Everything that has no block of its own: the free BOOLs and the three DInts.
+// The five standard signals are all shown as blocks above.
 function listedSignals(status) {
   return (status.signals || []).filter(function (item) {
-    return item.kind === 'custom' || item.kind === 'integer' || item.kind === 'counter';
+    return item.kind === 'custom' || item.kind === 'integer';
   });
 }
 
@@ -148,7 +151,7 @@ function signalsSection(machine, status) {
 function machineCard(machine, status) {
   // The counter label is part of the contract, so the block names it directly.
   const connection = status.connected ? 'online' : 'offline';
-  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">${icon('cpu')}DB${esc(machine.db_number)}</span><h3>${esc(machine.name)}</h3><p class="meta">${esc(machine.ip)}</p></div><span class="connection-pill ${connection}">${icon(connection === 'online' ? 'wifi' : 'wifi-off')}${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(firstOfKind(status, 'auto'))}${statusBlock(firstOfKind(status, 'run'))}${statusBlock(firstOfKind(status, 'fault'))}${statusBlock(firstOfKind(status, 'safety'))}</div><div class="count"><span class="count-label">${icon('gauge')}CONTADOR ATUAL</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado às ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${signalsSection(machine, status)}${hourlySection(machine)}</article>`;
+  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">${icon('cpu')}DB${esc(machine.db_number)}</span><h3>${esc(machine.name)}</h3><p class="meta">${esc(machine.ip)}</p></div><span class="connection-pill ${connection}">${icon(connection === 'online' ? 'wifi' : 'wifi-off')}${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(firstOfKind(status, 'auto'))}${statusBlock(firstOfKind(status, 'run'))}${statusBlock(firstOfKind(status, 'fault'))}${statusBlock(firstOfKind(status, 'safety'))}${statusBlock(firstOfKind(status, 'counter'))}</div><div class="count"><span class="count-label">${icon('gauge')}CONTADOR ATUAL</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado às ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${signalsSection(machine, status)}${hourlySection(machine)}</article>`;
 }
 
 function renderAreas(items) {

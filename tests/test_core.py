@@ -1568,13 +1568,18 @@ def test_scan_endpoint_rejects_an_unusable_range():
         sessions.discard("test-token-scan-bad-range")
 
 
-def test_the_card_lists_the_counter_bit_beside_the_other_signals():
-    """The counter has no block of its own, so dropping it from the list hides it."""
+def test_the_counter_bit_has_a_status_block_of_its_own():
+    """The counter is a diagnostic: the logic counts on the rising edge, so the
+    block answers whether counting is happening, not how much was counted."""
     script = TestClient(app).get("/static/app.js").text
-    assert "listedSignals" in script
-    assert "item.kind === 'counter'" in script
-    # The big number is Count from the DB, which is a different thing entirely.
-    assert "CONTADOR ATUAL" in script
+    assert "counter: ['Sem contagem', 'Contando']" in script
+    assert "firstOfKind(status, 'counter')" in script
+    # It has a block, so the signal list must not pick it up again.
+    listed = script.split("function listedSignals(")[1].split("\nfunction ")[0]
+    assert "'custom'" in listed and "'integer'" in listed
+    assert "'counter'" not in listed
+    page = TestClient(app).get("/").text
+    assert "Contando" in page and "borda de subida" in page
 
 
 def test_machine_form_offers_the_sweep():
