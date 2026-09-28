@@ -34,14 +34,14 @@ def test_parse_standard_layout():
     data = bytearray(READ_SIZE)
     data[0] = 0b00000111
     data[1] = 0b10000001
-    data[2] = 0b00000001
-    data[4:9] = b"SPCLP"
-    data[10:14] = (42).to_bytes(4, "big", signed=True)
+    data[0] |= 1 << 4  # Counter at 0.4, inside the same word as the status bits
+    data[14:19] = b"SPCLP"
+    data[20:24] = (42).to_bytes(4, "big", signed=True)
     reading = parse_db(bytes(data))
     assert reading.bits["0.0"] is True
     assert reading.bits["0.1"] is True
     assert reading.bits["0.2"] is True
-    assert reading.bits["2.0"] is True
+    assert reading.bits["0.4"] is True
     assert reading.bits["0.3"] is False
     assert reading.count == 42
 
@@ -57,7 +57,7 @@ def test_fake_client_produces_readings():
     first = FakePLCClient(count=10).read(32)
     assert first.count == 10
     assert first.bits["0.0"] is True
-    assert first.bits["2.0"] is True
+    assert first.bits["0.4"] is True
 
 
 def test_snap7_read_requests_full_standard_contract(monkeypatch):
@@ -70,9 +70,8 @@ def test_snap7_read_requests_full_standard_contract(monkeypatch):
         def db_read(self, db_number, start, size):
             captured["read"] = (db_number, start, size)
             data = bytearray(READ_SIZE)
-            data[0] = 3
-            data[2] = 1
-            data[10:14] = (7).to_bytes(4, "big", signed=True)
+            data[0] = 0b00010001
+            data[20:24] = (7).to_bytes(4, "big", signed=True)
             return bytes(data)
 
         def disconnect(self):
@@ -103,13 +102,13 @@ def test_machine_status_reports_every_address_with_labels(monkeypatch):
             bits["0.0"] = True
             bits["0.2"] = True
             bits["0.3"] = True
-            bits["2.0"] = True
+            bits["0.4"] = True
             return PLCReading(timestamp=datetime.now(timezone.utc), bits=bits, count=7)
 
     monkeypatch.setattr("app.main.client_for", lambda machine: FakeClient())
     area_id = app_storage.add_area("Test Plant", "Status Area")
     machine_id = app_storage.add_machine(area_id, "Status Machine", "fake", 53, "UTC")
-    app_storage.set_signal_labels(machine_id, {"0.4": "Portao de entrada"})
+    app_storage.set_signal_labels(machine_id, {"0.5": "Portao de entrada"})
     status = machine_status(machine_id)
 
     assert status.connected is True
@@ -122,10 +121,12 @@ def test_machine_status_reports_every_address_with_labels(monkeypatch):
     assert by_address["0.0"].label == "Automático"
     assert by_address["0.2"].label == "Falha"
     assert by_address["0.3"].label == "Segurança"
-    assert by_address["0.4"].label == "Portao de entrada"
-    assert by_address["0.4"].type == "BOOL"
-    assert by_address["0.4"].kind == "custom"
-    assert by_address["0.4"].value is False
+    assert by_address["0.4"].label == "Contador"
+    assert by_address["0.4"].kind == "counter"
+    assert by_address["0.5"].label == "Portao de entrada"
+    assert by_address["0.5"].type == "BOOL"
+    assert by_address["0.5"].kind == "custom"
+    assert by_address["0.5"].value is False
     # Only the four status bits are read only in the dashboard editor.
     assert [item.address for item in status.signals if not item.editable] == ["0.0", "0.1", "0.2", "0.3"]
     app_storage.delete_machine(machine_id)
@@ -140,10 +141,9 @@ def test_offline_machine_still_lists_signal_addresses():
     status = TestClient(app).get(f"/api/machines/{machine_id}/status").json()
     assert status["connected"] is False
     assert len(status["signals"]) == len(SIGNAL_LAYOUT)
-    last = status["signals"][-2]
-    assert last["address"] == "1.7"
-    assert last["label"] == "Sensor final"
-    assert last["value"] is None, "offline must not be reported as a false bit"
+    by_address = {item["address"]: item for item in status["signals"]}
+    assert by_address["1.7"]["label"] == "Sensor final"
+    assert by_address["1.7"]["value"] is None, "offline must not be reported as a false bit"
     app_storage.delete_machine(machine_id)
 
 
@@ -156,9 +156,8 @@ def test_snap7_client_reuses_connection_for_multiple_dbs(monkeypatch):
 
         def db_read(self, db_number, start, size):
             data = bytearray(READ_SIZE)
-            data[0] = 3
-            data[2] = 1
-            data[10:14] = db_number.to_bytes(4, "big", signed=True)
+            data[0] = 1
+            data[20:24] = db_number.to_bytes(4, "big", signed=True)
             return bytes(data)
 
         def disconnect(self):
@@ -410,8 +409,8 @@ def test_standard_signals_use_the_contract_labels():
     assert labels["0.1"] == "Produção"
     assert labels["0.2"] == "Falha"
     assert labels["0.3"] == "Segurança"
-    assert labels["2.0"] == "Contador"
-    assert labels["0.4"] == "Sinal 0.4"
+    assert labels["0.4"] == "Contador"
+    assert labels["0.5"] == "Sinal 0.5"
 
 
 def test_the_contract_has_four_status_bits():
@@ -436,9 +435,10 @@ def test_locked_signals_ignore_stored_overrides():
 
 
 def test_the_counter_label_is_editable():
-    counter = SIGNAL_LAYOUT[-1]
-    assert signal_label(counter, {"2.0": "Peças boas"}) == "Peças boas"
-    assert signal_label(counter, {"2.0": "   "}) == "Contador"
+    counter = next(spec for spec in SIGNAL_LAYOUT if spec.kind == "counter")
+    assert counter.address == "0.4"
+    assert signal_label(counter, {"0.4": "Peças boas"}) == "Peças boas"
+    assert signal_label(counter, {"0.4": "   "}) == "Contador"
 
 
 def test_only_the_status_bits_are_locked():
@@ -446,9 +446,16 @@ def test_only_the_status_bits_are_locked():
     assert EDITABLE_ADDRESSES == {
         "0.4", "0.5", "0.6", "0.7",
         "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7",
-        "2.0",
     }
     assert EDITABLE_ADDRESSES | LOCKED_ADDRESSES == {spec.address for spec in SIGNAL_LAYOUT}
+
+
+def test_the_contract_holds_sixteen_bools():
+    """The PLC block declares exactly 0.0 through 1.7, with no gap and no extra bit."""
+    assert [spec.address for spec in SIGNAL_LAYOUT] == [
+        "0.0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7",
+        "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7",
+    ]
 
 
 def test_duplicate_labels_are_detected():
@@ -457,11 +464,12 @@ def test_duplicate_labels_are_detected():
     assert duplicate_labels({"0.4": "portao", "0.5": "Portao"}) == ["portao"]
     assert duplicate_labels({"0.4": "Portao", "0.5": "portao"}) == ["Portao"]
     # A free signal may not steal the name of a fixed one, accents included.
-    # The reported spelling is whichever of the two labels was seen first.
-    assert duplicate_labels({"0.4": "Contador"}) == ["Contador"]
-    assert duplicate_labels({"0.4": "SEGURANCA"}) == ["Segurança"]
-    assert duplicate_labels({"0.4": "CONtador"}) == ["CONtador"]
-    assert duplicate_labels({"0.4": "Portao de entrada", "0.5": "Portao de saida"}) == []
+    # The counter at 0.4 is read before the free signals, so its own spelling is
+    # the one reported when both name the same thing.
+    assert duplicate_labels({"0.5": "Contador"}) == ["Contador"]
+    assert duplicate_labels({"0.5": "SEGURANCA"}) == ["Segurança"]
+    assert duplicate_labels({"0.5": "CONtador"}) == ["Contador"]
+    assert duplicate_labels({"0.5": "Portao de entrada", "0.6": "Portao de saida"}) == []
     assert duplicate_labels() == []
 
 
@@ -629,11 +637,12 @@ def test_duplicate_signal_labels_are_rejected_through_the_api():
             "0.5": "Portao de saida",
         }
 
-        # A free signal may not adopt the name of a fixed one either.
+        # A free signal may not adopt the name of a fixed one either. The counter
+        # at 0.4 counts, so 0.5 is the first address that is only a free signal.
         response = client.put(
             f"/api/config/machines/{machine_id}/signals",
             headers=headers,
-            json=[{"address": "0.4", "label": "Contador"}],
+            json=[{"address": "0.5", "label": "Contador"}],
         )
         assert response.status_code == 422
         assert app_storage.signal_labels(machine_id) == {
@@ -655,14 +664,14 @@ def test_the_counter_can_be_renamed_through_the_api():
         response = client.put(
             f"/api/config/machines/{machine_id}/signals",
             headers=headers,
-            json=[{"address": "2.0", "label": "Peças boas"}],
+            json=[{"address": "0.4", "label": "Peças boas"}],
         )
         assert response.status_code == 200
         by_address = {item["address"]: item for item in response.json()}
-        assert by_address["2.0"]["label"] == "Peças boas"
-        assert by_address["2.0"]["editable"] is True
+        assert by_address["0.4"]["label"] == "Peças boas"
+        assert by_address["0.4"]["editable"] is True
         assert by_address["0.0"]["editable"] is False
-        assert app_storage.signal_labels(machine_id) == {"2.0": "Peças boas"}
+        assert app_storage.signal_labels(machine_id) == {"0.4": "Peças boas"}
     finally:
         sessions.discard("test-token-counter")
         app_storage.delete_machine(machine_id)
@@ -1221,8 +1230,10 @@ def test_renaming_a_plant_to_the_same_address_is_still_allowed():
 def test_layout_matches_the_customer_db():
     """Guards the offsets read from the block in the field.
 
-    DBX2.0 Counter, DBX4.0-8.0 the 'SPCLP' array, DBD10.0 Count. Byte 9 is the
-    alignment gap. A read that misses one of these silently returns other data.
+    16 BOOLs in 0.0-1.7 with Counter at 0.4, the 'SPCLP' array at 14.0 and Count at
+    20.0, with byte 19 as the alignment gap. A read that misses one of these
+    silently returns other data, which is how a count of 1250 once showed as
+    1397769036 on the dashboard.
     """
     from app.plc import (  # noqa: PLC0415
         COUNT_OFFSET,
@@ -1230,21 +1241,20 @@ def test_layout_matches_the_customer_db():
         SIGNATURE,
         SIGNATURE_OFFSET,
         SIGNATURE_TEXT,
-        SIGNAL_LAYOUT,
     )
 
-    assert SIGNATURE_OFFSET == 4
+    assert SIGNATURE_OFFSET == 14
     assert SIGNATURE_TEXT == "SPCLP"
     assert SIGNATURE == b"SPCLP"
-    assert COUNT_OFFSET == 10
+    assert COUNT_OFFSET == 20
     assert COUNT_SIZE == 4
-    # 14 bytes: 0..13, the last byte of Count inclusive.
-    assert READ_SIZE == 14
+    # 24 bytes: 0..23, the last byte of Count inclusive.
+    assert READ_SIZE == 24
 
-    # The BOOL word must not reach the signature block, and the signature must
-    # end before the counter starts.
-    assert max(int(spec.address.split(".")[0]) for spec in SIGNAL_LAYOUT) == 2
-    assert SIGNATURE_OFFSET + len(SIGNATURE) == 9 < COUNT_OFFSET
+    # The whole BOOL word must be inside bytes 0-1, the signature must end before
+    # the counter starts, and Count must be the last thing the read covers.
+    assert {spec.address.split(".")[0] for spec in SIGNAL_LAYOUT} == {"0", "1"}
+    assert SIGNATURE_OFFSET + len(SIGNATURE) == 19 < COUNT_OFFSET
     assert COUNT_OFFSET + COUNT_SIZE == READ_SIZE
 
 

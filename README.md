@@ -47,7 +47,7 @@ $env:SP_CLP_PORT = "8080"
 
 Na primeira execução o Windows pode pedir permissão de firewall; permita em redes privadas, senão o painel responde apenas neste computador.
 
-Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O cliente simulado usa o mesmo contrato do DB: sinais BOOL de `0.0` a `1.7`, `Counter` em `DBX2.0`, a assinatura `SPCLP` em `DBX4.0` e `Count` como `DInt` big-endian em `DB10.0`. A varredura com `fake` responde `ready`.
+Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O cliente simulado usa o mesmo contrato do DB: os 16 BOOLs em `0.0`–`1.7` com `Counter` em `DBX0.4`, a assinatura `SPCLP` em `DBX14.0` e `Count` como `DInt` big-endian em `DB20.0`. A varredura com `fake` responde `ready`.
 
 ## Infraestrutura de rede
 
@@ -70,14 +70,15 @@ A página **Ajuda** do painel traz o mesmo conteúdo para o cliente.
 - Slot padrão: `1`
 - Sinais fixos: `AUTO` (`0.0`), `RUN` (`0.1`), `FAULT` (`0.2`) e `SAFETY` (`0.3`). Fault e Safety são coisas diferentes: falha da máquina e cadeado de segurança. Nome e tipo são do contrato e **não podem ser alterados**.
 - Polaridade dos bits fixos: `AUTO` 1 = automático, 0 = manual; `RUN` 1 = produzindo, 0 = parado; `FAULT` 1 = **em falha**, 0 = normal; `SAFETY` 1 = normal, 0 = pendente
-- Sinais adicionais: posições fixas de `0.4` a `0.7` e de `1.0` a `1.7`; apenas o rótulo é editável
+- Sinais: os 16 BOOLs ocupam `0.0` a `1.7`, sem intervalo
+- Sinais adicionais: posições fixas de `0.5` a `0.7` e de `1.0` a `1.7`; apenas o rótulo é editável
 - Cada sinal precisa de um rótulo próprio. A comparação ignora maiúsculas e acentos, e um sinal renomeável também não pode adotar o nome de um sinal fixo
-- `Counter`: `BOOL` em `DBX2.0`, com rótulo editável
-- Assinatura: `ARRAY[0..4] OF CHAR` em `DBX4.0` com o valor `SPCLP`, usada pela varredura do cadastro
-- `Count`: `DInt` big-endian em `DB10.0`
-- O byte `9` é o espaço de alinhamento entre a assinatura e o contador
-- Uma única leitura de 14 bytes (`0`–`13`) traz o estado, a assinatura e o contador
-- `Int_1`, `Int_2` e `Int_3` em `DB14.0`, `DB18.0` e `DB22.0` existem no bloco mas **não fazem parte do contrato**; o painel não os lê
+- `Counter`: `BOOL` em `DBX0.4`, com rótulo editável
+- Assinatura: `ARRAY[0..4] OF CHAR` em `DBX14.0` com o valor `SPCLP`, usada pela varredura do cadastro
+- `Count`: `DInt` big-endian em `DB20.0`
+- O byte `19` é o espaço de alinhamento entre a assinatura e o contador
+- Uma única leitura de 24 bytes (`0`–`23`) traz o estado, a assinatura e o contador
+- `Int_1`, `Int_2` e `Int_3` em `DB2.0`, `DB6.0` e `DB10.0` existem no bloco mas **não fazem parte do contrato**; a leitura passa por cima deles e o painel os ignora
 - O bloco precisa estar com o **acesso otimizado desligado**: o painel lê endereços absolutos, e num bloco otimizado essas posições não existem
 - O contador reinicia quando o CLP reinicia; qualquer redução do valor inicia nova linha de base e não produz valor negativo
 - Totais horários usam o fuso configurado para cada máquina

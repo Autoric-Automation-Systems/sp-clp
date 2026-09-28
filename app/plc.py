@@ -23,17 +23,18 @@ class SignalSpec:
     default_label: str
 
 
-# Standard contract: BOOL signals occupy 0.0 through 1.7, COUNTER is a BOOL at 2.0.
-# 0.0-0.3 are the four standard status bits (AUTO, RUN, FAULT, SAFETY) that drive
-# the dashboard logic. Their labels are part of the contract and cannot be renamed.
+# Standard contract: the 16 BOOL signals fill 0.0 through 1.7, which is exactly the
+# layout the PLC block declares. 0.0-0.3 are the four standard status bits (AUTO,
+# RUN, FAULT, SAFETY) that drive the dashboard logic; COUNTER is the BOOL at 0.4.
+# Their labels are part of the contract and cannot be renamed.
 SIGNAL_LAYOUT: tuple[SignalSpec, ...] = (
     SignalSpec("0.0", "auto", "Automático"),
     SignalSpec("0.1", "run", "Produção"),
     SignalSpec("0.2", "fault", "Falha"),
     SignalSpec("0.3", "safety", "Segurança"),
-    *(SignalSpec(f"0.{bit}", "custom", f"Sinal 0.{bit}") for bit in range(4, 8)),
+    SignalSpec("0.4", "counter", "Contador"),
+    *(SignalSpec(f"0.{bit}", "custom", f"Sinal 0.{bit}") for bit in range(5, 8)),
     *(SignalSpec(f"1.{bit}", "custom", f"Sinal 1.{bit}") for bit in range(8)),
-    SignalSpec("2.0", "counter", "Contador"),
 )
 
 SIGNAL_ADDRESSES = [spec.address for spec in SIGNAL_LAYOUT]
@@ -49,21 +50,23 @@ SIGNAL_TYPES = {spec.address: "BOOL" for spec in SIGNAL_LAYOUT}
 
 # Absolute layout of the customer DB, read from the block in the field:
 #
-#   DBX0.0-1.7   BOOL signals (AUTO, RUN, FAULT, SAFETY and the free positions)
-#   DBX2.0       Counter (BOOL)
-#   DBX4.0-8.0   Type, ARRAY[0..4] OF CHAR = 'S','P','C','L','P'
-#   DBD10.0      Count (DInt, big-endian)
+#   DBX0.0-1.7   16 BOOL signals (Auto, Run, Fault, Safety, Counter, Signal_5..15)
+#   DBD2.0-13.0  Int_1, Int_2, Int_3; declared by the PLC but not part of the
+#                contract, so they are crossed by the read and then ignored
+#   DBX14.0-18.0 Type, ARRAY[0..4] OF CHAR = 'S','P','C','L','P'
+#   DBD20.0      Count (DInt, big-endian)
 #
 # The signature is what the configuration scan looks for, so a wrong DB number is
 # caught before the machine is saved. A CHAR array is used instead of a numeric
 # magic number because it is readable in TIA Portal and has no byte order to get
-# wrong. Byte 9 is the alignment gap before the counter.
-SIGNATURE_OFFSET = 4
+# wrong. Byte 19 is the alignment gap before the counter.
+SIGNATURE_OFFSET = 14
 SIGNATURE_TEXT = "SPCLP"
 SIGNATURE = SIGNATURE_TEXT.encode("ascii")
 
-# The dashboard reads the status word, the signature and the counter in one go.
-COUNT_OFFSET = 10
+# The dashboard reads the block up to the counter in one go: status word,
+# signature and counter all arrive together.
+COUNT_OFFSET = 20
 COUNT_SIZE = 4
 READ_SIZE = COUNT_OFFSET + COUNT_SIZE
 
@@ -160,9 +163,9 @@ class FakePLCClient:
         if not self.connected:
             raise ConnectionError("Fake PLC disconnected")
         data = bytearray(READ_SIZE)
-        # AUTO and RUN set, SAFETY clear of pending, counter counting.
-        data[0] = 0b00001011
-        data[2] = 0b00000001
+        # Byte 0 carries AUTO (0.0), RUN (0.1), SAFETY (0.3) and the counter (0.4);
+        # FAULT (0.2) stays clear.
+        data[0] = 0b00011011
         # The simulator carries the same signature and offsets as the real block,
         # so a machine registered as "fake" behaves like a prepared PLC.
         data[SIGNATURE_OFFSET:SIGNATURE_OFFSET + len(SIGNATURE)] = SIGNATURE

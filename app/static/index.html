@@ -58,7 +58,7 @@
             <li><strong>Verificar CLP</strong> lê a DB antes de salvar e diz se o endereço responde e se aquela DB é mesmo do SP-CLP. É só leitura: nada é escrito no CLP.</li>
             <li>Para testar sem CLP, use <code>fake</code> como IP: o servidor gera leituras simuladas.</li>
           </ul>
-          <p>O DB do SP-CLP começa com o estado da máquina, tem a <strong>assinatura de 5 caracteres</strong> (<code>SPCLP</code>) a partir do byte <code>4</code> e o contador no byte <code>10</code>. É essa assinatura que a verificação procura. Sem ela o painel avisa que a DB não é do SP-CLP, o que evita valores sem sentido no dashboard.</p>
+          <p>O DB do SP-CLP começa com os 16 BOOLs em <code>0.0</code>–<code>1.7</code>, tem a <strong>assinatura de 5 caracteres</strong> (<code>SPCLP</code>) a partir do byte <code>14</code> e o contador no byte <code>20</code>. É essa assinatura que a verificação procura. Sem ela o painel avisa que a DB não é do SP-CLP, o que evita valores sem sentido no dashboard.</p>
           <p>Declare o bloco com <strong>acesso otimizado desligado</strong>: o painel lê endereços absolutos, e num bloco otimizado essas posições não existem.</p>
         </article>
         <article class="panel doc">
@@ -66,7 +66,7 @@
           <p>Em Configurações, clique em <em>Sinais</em> na máquina desejada.</p>
           <ul>
             <li><strong>Fixo</strong> (com cadeado): <code>AUTO</code> (0.0), <code>RUN</code> (0.1), <code>Falha</code> (0.2) e <code>Segurança</code> (0.3). Fault e Safety são coisas diferentes: falha da máquina e cadeado de segurança. O nome é do contrato e não muda.</li>
-            <li><strong>Renomável</strong>: as posições <code>0.4</code>–<code>0.7</code>, <code>1.0</code>–<code>1.7</code> e o contador.</li>
+            <li><strong>Renomável</strong>: o contador (<code>0.4</code>) e as posições <code>0.5</code>–<code>0.7</code> e <code>1.0</code>–<code>1.7</code>.</li>
             <li>Cada nome precisa ser <strong>único na máquina</strong>. Maiúsculas e acentos não diferenciam: <em>Portao</em> e <em>Portão</em> contam como repetidos.</li>
             <li>Deixar o campo vazio devolve o nome padrão.</li>
           </ul>
