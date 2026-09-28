@@ -714,10 +714,62 @@ function beginPlantRename(slug, name) {
   field.focus();
 }
 
+const PROBE_ICONS = {
+  ready: 'circle-check',
+  unsigned: 'triangle-alert',
+  missing: 'triangle-alert',
+  unreachable: 'wifi-off',
+};
+
+function showProbe(status, message) {
+  const target = document.querySelector('#machine-probe-message');
+  target.className = 'probe-message ' + status;
+  target.innerHTML = icon(PROBE_ICONS[status] || 'circle-help') + esc(message);
+  target.hidden = false;
+}
+
+function resetProbe() {
+  const target = document.querySelector('#machine-probe-message');
+  target.hidden = true;
+  target.textContent = '';
+}
+
+// Read only: the address is checked against the PLC before the machine is
+// saved, so a wrong DB number is caught here instead of becoming a confusing
+// value on the dashboard.
+async function probeMachine() {
+  const button = document.querySelector('#machine-probe');
+  const label = document.querySelector('#machine-probe-label');
+  const ip = document.querySelector('#machine-ip').value.trim();
+  const db = Number(document.querySelector('#machine-db').value);
+  if (!ip || !db) {
+    showProbe('missing', 'Informe o IP do CLP e o DB antes de verificar.');
+    return;
+  }
+  button.disabled = true;
+  label.textContent = 'Verificando...';
+  try {
+    const response = await request('/api/config/plc/probe', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ip: ip, db_number: db}),
+    });
+    const body = await response.json().catch(function () { return {}; });
+    if (response.ok) showProbe(body.status, body.message);
+    else showProbe('unreachable', typeof body.detail === 'string' ? body.detail : 'Não foi possível verificar o CLP.');
+  } catch (error) {
+    showProbe('unreachable', 'Sem resposta do servidor do painel. Confira se o SP-CLP continua aberto.');
+  } finally {
+    button.disabled = false;
+    label.textContent = 'Verificar CLP';
+  }
+}
+
 function beginEdit(machineId) {
   const machine = cachedMachines.find(function (item) { return item.id === machineId; });
   if (!machine) return;
   editingMachineId = machineId;
+  resetProbe();
   document.querySelector('#area-select').value = String(machine.area_id);
   document.querySelector('#area-select').disabled = true;
   document.querySelector('#machine-name').value = machine.name;
@@ -734,6 +786,7 @@ function beginEdit(machineId) {
 function cancelEdit() {
   editingMachineId = null;
   machineForm.reset();
+  resetProbe();
   document.querySelector('#area-select').disabled = false;
   document.querySelector('#machine-timezone').value = 'America/Sao_Paulo';
   document.querySelector('#machine-form-eyebrow').textContent = 'NOVA MÁQUINA';
@@ -760,6 +813,11 @@ document.querySelectorAll('.nav-button').forEach(function (button) {
 });
 document.querySelector('#login-open-button').onclick = openLogin;
 document.querySelector('#machine-cancel').onclick = cancelEdit;
+document.querySelector('#machine-probe').onclick = probeMachine;
+// The result belongs to the address that was scanned, so editing the address or
+// the DB clears it instead of leaving a stale answer on screen.
+document.querySelector('#machine-ip').oninput = resetProbe;
+document.querySelector('#machine-db').oninput = resetProbe;
 document.querySelector('#setup-button').onclick = async function () {
   const password = document.querySelector('#setup-password').value;
   const response = await request('/api/setup/password', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: password})});

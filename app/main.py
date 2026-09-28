@@ -29,20 +29,28 @@ from .models import (
     MachineInput,
     MachineStatus,
     PlantRenameInput,
+    ProbeInput,
+    ProbeResult,
     SetupPassword,
     SignalDefinition,
     SignalLabelInput,
     SignalValue,
 )
 from .plc import (
+    DEFAULT_RACK,
+    DEFAULT_SLOT,
     EDITABLE_ADDRESSES,
     SIGNAL_LAYOUT,
     SIGNAL_TYPES,
     FakePLCClient,
+    FakePLCProbeClient,
     PLCClient,
+    PLCProbeClient,
     Snap7PLCClient,
+    Snap7ProbeClient,
     describe_error,
     duplicate_labels,
+    probe_plc,
     signal_label,
 )
 from .security import hash_password, verify_password
@@ -77,6 +85,13 @@ def client_for(machine) -> PLCClient:
         return plc_clients[key]
     plc_clients.setdefault(key, Snap7PLCClient(machine["ip"], machine["rack"], machine["slot"]))
     return plc_clients[key]
+
+
+def probe_client_for(ip: str) -> PLCProbeClient:
+    """The scan never touches the polling clients, so it cannot disturb them."""
+    if ip.strip().lower() in {"fake", "simulator", "simulador"}:
+        return FakePLCProbeClient()
+    return Snap7ProbeClient(ip, DEFAULT_RACK, DEFAULT_SLOT)
 
 
 @app.get("/", response_class=FileResponse)
@@ -277,6 +292,19 @@ def create_machine(area_id: int, payload: MachineInput) -> dict[str, int]:
     if storage.get_area(area_id) is None:
         raise HTTPException(status_code=400, detail="Área inválida")
     return {"id": storage.add_machine(area_id, payload.name, payload.ip, payload.db_number, payload.timezone)}
+
+
+@app.post("/api/config/plc/probe", response_model=ProbeResult, dependencies=[Depends(require_admin)])
+def scan_plc(payload: ProbeInput) -> ProbeResult:
+    """Read-only scan of an address typed in the machine form.
+
+    Answers before the machine is saved, so a wrong DB number or a DB that was
+    never prepared for SP-CLP is caught here instead of showing up later as
+    plausible nonsense on the dashboard. Nothing is ever written to the PLC.
+    """
+    result = probe_plc(probe_client_for(payload.ip), payload.db_number, payload.ip)
+    logger.info("Varredura de %s DB %s: %s", payload.ip, payload.db_number, result.status)
+    return ProbeResult(status=result.status, message=result.message, detail=result.detail)
 
 
 @app.put("/api/config/machines/{machine_id}", dependencies=[Depends(require_admin)])

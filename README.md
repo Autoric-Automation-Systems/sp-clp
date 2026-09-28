@@ -47,7 +47,7 @@ $env:SP_CLP_PORT = "8080"
 
 Na primeira execução o Windows pode pedir permissão de firewall; permita em redes privadas, senão o painel responde apenas neste computador.
 
-Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O cliente simulado usa o mesmo contrato do DB: sinais BOOL de `0.0` a `1.7` e `Count` como `UDInt` big-endian em `DBX2.0`.
+Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O cliente simulado usa o mesmo contrato do DB: sinais BOOL de `0.0` a `1.7`, `Counter` em `DBX2.0` e `Count` como `DInt` big-endian em `DB4.0`. A varredura com `fake` responde `ready`.
 
 ## Infraestrutura de rede
 
@@ -74,8 +74,26 @@ A página **Ajuda** do painel traz o mesmo conteúdo para o cliente.
 - Cada sinal precisa de um rótulo próprio. A comparação ignora maiúsculas e acentos, e um sinal renomeável também não pode adotar o nome de um sinal fixo
 - `Counter`: `BOOL` em `DBX2.0`, com rótulo editável
 - `Count`: `DInt` em `DB4.0`
+- Assinatura: `ARRAY[0..7] OF CHAR` em `DBX8.0` com o valor `SPCLPDB1`, usada pela varredura do cadastro. O último caractere é a revisão do contrato
+- O bloco precisa estar com o **acesso otimizado desligado**: o painel lê endereços absolutos, e num bloco otimizado essas posições não existem
 - O contador reinicia quando o CLP reinicia; qualquer redução do valor inicia nova linha de base e não produz valor negativo
 - Totais horários usam o fuso configurado para cada máquina
+
+## Varredura do CLP
+
+O botão **Verificar CLP** do formulário de máquina lê o endereço informado **antes** de salvar e responde em qual dos quatro casos o cadastro está:
+
+| Resultado | Significado | Onde corrigir |
+| --- | --- | --- |
+| `ready` | A DB existe e tem a assinatura `SPCLPDB1` | Nada |
+| `missing` | O CLP respondeu, mas a leitura da DB foi recusada | Número do DB, bloco otimizado |
+| `unsigned` | A DB respondeu, mas sem a assinatura do SP-CLP | DB errada, ou bloco sem a assinatura |
+| `unreachable` | Não houve resposta do CLP | IP, cabo, rack `0` / slot `1` |
+
+- `POST /api/config/plc/probe` com `{"ip": "...", "db_number": N}`; exige autenticação, como todo endpoint de configuração
+- **Somente leitura**: o endpoint nunca escreve no CLP, e a conexão é aberta, usada e fechada, para não disputar a sessão do polling
+- Sem `missing` e `unsigned` separados, um DB errado mostraria valores plausíveis e sem sentido no dashboard
+- Com `fake` no lugar do IP, a varredura usa o simulador e serve para demonstrar o fluxo sem CLP
 
 ## Identidade do cliente
 

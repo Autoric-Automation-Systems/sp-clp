@@ -8,8 +8,14 @@ from app.models import MachineInput
 from app.plc import (
     EDITABLE_ADDRESSES,
     LOCKED_ADDRESSES,
+    PROBE_MISSING,
+    PROBE_READY,
+    PROBE_UNREACHABLE,
+    PROBE_UNSIGNED,
+    READ_SIZE,
     SIGNAL_LAYOUT,
     FakePLCClient,
+    FakePLCProbeClient,
     describe_error,
     duplicate_labels,
     effective_labels,
@@ -1196,3 +1202,150 @@ def test_renaming_a_plant_to_the_same_address_is_still_allowed():
         from app.main import sessions
 
         sessions.discard("test-token-plant-case")
+
+
+def test_signature_sits_after_the_counter():
+    """The signature must not move the status word the dashboard already reads."""
+    from app.plc import SIGNATURE, SIGNATURE_OFFSET, SIGNATURE_TEXT
+
+    assert READ_SIZE == 8
+    assert SIGNATURE_OFFSET == READ_SIZE
+    assert SIGNATURE == SIGNATURE_TEXT.encode("ascii")
+    assert SIGNATURE_TEXT == "SPCLPDB1"
+    assert len(SIGNATURE_TEXT) == 8
+
+
+def _probe(**kwargs):
+    from app.plc import probe_plc
+
+    return probe_plc(FakePLCProbeClient(**kwargs), 1, "192.168.0.10")
+
+
+def test_probe_accepts_a_prepared_db():
+    result = _probe()
+    assert result.status == PROBE_READY
+    assert "SPCLPDB1" in result.message
+    assert result.detail is None
+
+
+def test_probe_tells_a_wrong_db_from_an_unreachable_plc():
+    """These two look identical on the dashboard, and are fixed in different places."""
+    wrong_db = _probe(databases=(7,))
+    assert wrong_db.status == PROBE_MISSING
+    assert "1" in wrong_db.message
+
+    offline = _probe(reachable=False)
+    assert offline.status == PROBE_UNREACHABLE
+    assert "192.168.0.10" in offline.message
+    # Rack and slot belong in the message: a wrong value also breaks the connect.
+    assert "rack 0 / slot 1" in offline.message
+
+
+def test_probe_reports_a_db_that_was_never_prepared():
+    result = _probe(signature=b"OUTRODB1")
+    assert result.status == PROBE_UNSIGNED
+    assert result.detail == "OUTRODB1"
+
+
+def test_probe_shows_the_signature_it_found():
+    """The operator needs to see what is written in the block, not just a mismatch."""
+    # A short value arrives padded with NUL bytes, which must not reach the panel.
+    assert _probe(signature=b"SPX").detail == "SPX"
+    # An empty block says so instead of showing eight invisible characters.
+    empty = _probe(signature=b"")
+    assert empty.status == PROBE_UNSIGNED
+    assert "vazio" in empty.message
+    assert empty.detail is None
+    # Bytes that are not text at all must not break the response either.
+    assert _probe(signature=bytes([255, 254, 253, 252, 251, 250, 249, 248])).status == PROBE_UNSIGNED
+
+
+def test_probe_never_leaves_the_connection_open():
+    """Even a failing read must close, or a wrong address leaks a socket."""
+    from app.plc import probe_plc
+
+    class Tracked(FakePLCProbeClient):
+        def __init__(self):
+            super().__init__(databases=(7,))
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    prober = Tracked()
+    assert probe_plc(prober, 1, "192.168.0.10").status == PROBE_MISSING
+    assert prober.closed is True
+
+
+def test_probe_survives_a_close_that_raises():
+    from app.plc import probe_plc
+
+    class Stubborn(FakePLCProbeClient):
+        def close(self):
+            raise OSError("socket already gone")
+
+    # The result must survive a transport that cannot clean itself up.
+    assert probe_plc(Stubborn(), 1, "192.168.0.10").status == PROBE_READY
+
+
+def test_probe_endpoint_requires_authentication():
+    response = TestClient(app).post("/api/config/plc/probe", json={"ip": "192.168.0.10", "db_number": 1})
+    assert response.status_code == 401
+
+
+def test_probe_endpoint_answers_for_the_simulator():
+    client = _admin_client("test-token-probe")
+    try:
+        response = client.post(
+            "/api/config/plc/probe",
+            headers={"Authorization": "Bearer test-token-probe"},
+            json={"ip": "fake", "db_number": 1},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == PROBE_READY
+    finally:
+        from app.main import sessions
+
+        sessions.discard("test-token-probe")
+
+
+def test_probe_endpoint_rejects_a_blank_address():
+    client = _admin_client("test-token-probe-blank")
+    try:
+        response = client.post(
+            "/api/config/plc/probe",
+            headers={"Authorization": "Bearer test-token-probe-blank"},
+            json={"ip": "   ", "db_number": 1},
+        )
+        assert response.status_code == 422
+    finally:
+        from app.main import sessions
+
+        sessions.discard("test-token-probe-blank")
+
+
+def test_probe_endpoint_rejects_a_db_out_of_range():
+    client = _admin_client("test-token-probe-db")
+    try:
+        response = client.post(
+            "/api/config/plc/probe",
+            headers={"Authorization": "Bearer test-token-probe-db"},
+            json={"ip": "192.168.0.10", "db_number": 0},
+        )
+        assert response.status_code == 422
+    finally:
+        from app.main import sessions
+
+        sessions.discard("test-token-probe-db")
+
+
+def test_machine_form_offers_the_scan():
+    page = TestClient(app).get("/").text
+    assert 'id="machine-probe"' in page
+    assert 'id="machine-probe-message"' in page
+    assert "SPCLPDB1" in page
+    # The button is wired in app.js, and the scan is read only by design.
+    script = TestClient(app).get("/static/app.js").text
+    assert "probeMachine" in script
+    assert "'/api/config/plc/probe'" in script
+    assert "db_write" not in script

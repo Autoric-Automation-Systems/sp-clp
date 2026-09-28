@@ -33,6 +33,27 @@ class Machine(MachineInput):
     slot: int = 1
 
 
+class ProbeInput(BaseModel):
+    """An address typed in the machine form, scanned before it is saved."""
+
+    ip: str = Field(min_length=1, max_length=255)
+    db_number: int = Field(ge=1, le=65535)
+
+    @field_validator("ip")
+    @classmethod
+    def _no_blank_address(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Informe o IP do CLP")
+        return cleaned
+
+
+class ProbeResult(BaseModel):
+    status: str
+    message: str
+    detail: str | None = None
+
+
 class AreaInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     plant_name: str = Field(min_length=1, max_length=120)
