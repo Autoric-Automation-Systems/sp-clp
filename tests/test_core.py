@@ -1699,6 +1699,29 @@ def test_status_blocks_colour_the_icon_without_trusting_colour_alone():
     assert "counter: ['Sem contagem', 'Contando']" in script
     assert "statusTooltip" in script
 
+
+def test_every_hue_the_script_emits_exists_in_the_stylesheet():
+    """Join the two halves: a class the stylesheet does not define renders grey.
+
+    The colour was verified once against a hand written class name, which is how a
+    missing prefix survived: the stylesheet was right and the markup was wrong, and
+    every block fell back to the neutral default without anything failing.
+    """
+    script = TestClient(app).get("/static/app.js").text
+    css = TestClient(app).get("/static/styles.css").text
+
+    block = script.split("const STATE_HUES = {", 1)[1].split("};", 1)[0]
+    hues = set(re.findall(r":\s*'([a-z]+)'", block))
+    assert hues == {"blue", "green", "red", "cyan"}
+
+    # The class is built with a prefix, and the stylesheet has to use the same one.
+    assert "'on-' +" in script or "`on-${" in script
+    for hue in hues:
+        assert f".state.on-{hue}{{" in css, f"a classe .state.on-{hue} sumiu do CSS"
+    # Both neutral cases the script can emit must be covered as well.
+    assert '.state{--state:#b6c6d1' in css
+    assert ".state.unknown .state-icon{" in css
+
     page = TestClient(app).get("/").text
     assert "tracejado" in page
 

@@ -114,7 +114,10 @@ function statusColour(item, state) {
   // A lost link must never look like a bit at zero, or a card reads as a stopped
   // machine when the panel simply cannot see the PLC.
   if (state === 'unknown') return 'unknown';
-  return item.value ? STATE_HUES[item.kind] || 'blue' : 'off';
+  // The stylesheet keys the colour on the "on-" prefix, so the hue is only the
+  // second half of the class name. Without it nothing matches and every block
+  // falls back to the neutral default, which is what a grey card looks like.
+  return item.value ? `on-${STATE_HUES[item.kind] || 'blue'}` : 'off';
 }
 
 function statusTooltip(item, state) {
