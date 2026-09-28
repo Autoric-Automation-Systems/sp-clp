@@ -81,11 +81,14 @@ function isHealthy(item) {
 function stateOf(item) {
   // A null value means the PLC could not be read, which is not the same as a false bit.
   if (!item || item.value === null || item.value === undefined) return 'unknown';
+  // A number has no healthy or faulty state, only a value.
+  if (item.type === 'DINT') return 'value';
   return isHealthy(item) ? 'ok' : 'bad';
 }
 
 function stateText(item, state) {
   if (state === 'unknown') return 'Sem leitura';
+  if (state === 'value') return String(item.value);
   const words = BIT_WORDS[item.kind];
   if (!words) return item.value ? 'Ativo' : 'Parado';
   return item.value ? words[1] : words[0];
@@ -111,26 +114,39 @@ function hourlySection(machine) {
   return `<div class="hourly"><button type="button" class="chart-open" data-chart-id="${machine.id}"><span class="toggle-label">${icon('clock')}Contagens por hora</span>${icon('arrow-right')}</button></div>`;
 }
 
+// Everything the operator can name: the free BOOLs and the three DInts. The five
+// standard signals already have their own blocks on the card.
+function listedSignals(status) {
+  return (status.signals || []).filter(function (item) {
+    return item.kind === 'custom' || item.kind === 'integer';
+  });
+}
+
+function signalRow(item) {
+  const state = stateOf(item);
+  const text = esc(state === 'unknown' ? '-' : stateText(item, state));
+  // A number needs no verdict, so it is shown alone instead of as a state chip.
+  const badge = state === 'value'
+    ? `<span class="signal-state value">${text}</span>`
+    : `<span class="signal-state ${state}">${icon(stateIcon(state))}${text}</span>`;
+  return `<li class="signal-row"><span class="signal-address">${esc(item.address)}</span><span class="signal-name">${esc(item.label)}</span>${badge}</li>`;
+}
+
 function signalsSection(machine, status) {
-  const custom = signalsOfKind(status, 'custom');
+  const items = listedSignals(status);
   const open = signalsOpen.has(machine.id);
   let body = '';
   if (open) {
-    body = '<ul class="signal-list">' + custom.map(function (item) {
-      const state = stateOf(item);
-      const text = state === 'unknown' ? '-' : item.value ? 'Ativo' : 'Parado';
-      return `<li class="signal-row"><span class="signal-address">${esc(item.address)}</span><span class="signal-name">${esc(item.label)}</span><span class="signal-state ${state}">${icon(stateIcon(state))}${text}</span></li>`;
-    }).join('') + '</ul>';
+    body = '<ul class="signal-list">' + items.map(signalRow).join('') + '</ul>';
   }
   const action = open ? 'Ocultar' : 'Ver';
-  return `<div class="signals"><button type="button" class="signals-toggle" data-signals-id="${machine.id}" aria-expanded="${open}"><span class="toggle-label">${icon('list')}${action} sinais (${custom.length})</span>${icon(open ? 'chevron-up' : 'chevron-down')}</button>${body}</div>`;
+  return `<div class="signals"><button type="button" class="signals-toggle" data-signals-id="${machine.id}" aria-expanded="${open}"><span class="toggle-label">${icon('list')}${action} sinais (${items.length})</span>${icon(open ? 'chevron-up' : 'chevron-down')}</button>${body}</div>`;
 }
 
 function machineCard(machine, status) {
-  const counter = firstOfKind(status, 'counter');
-  const counterLabel = counter ? `CONTADOR ${esc(counter.label)}` : 'CONTADOR ATUAL';
+  // The counter label is part of the contract, so the block names it directly.
   const connection = status.connected ? 'online' : 'offline';
-  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">${icon('cpu')}DB${esc(machine.db_number)}</span><h3>${esc(machine.name)}</h3><p class="meta">${esc(machine.ip)}</p></div><span class="connection-pill ${connection}">${icon(connection === 'online' ? 'wifi' : 'wifi-off')}${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(firstOfKind(status, 'auto'))}${statusBlock(firstOfKind(status, 'run'))}${statusBlock(firstOfKind(status, 'fault'))}${statusBlock(firstOfKind(status, 'safety'))}</div><div class="count"><span class="count-label">${icon('gauge')}${counterLabel}</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado às ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${signalsSection(machine, status)}${hourlySection(machine)}</article>`;
+  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">${icon('cpu')}DB${esc(machine.db_number)}</span><h3>${esc(machine.name)}</h3><p class="meta">${esc(machine.ip)}</p></div><span class="connection-pill ${connection}">${icon(connection === 'online' ? 'wifi' : 'wifi-off')}${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(firstOfKind(status, 'auto'))}${statusBlock(firstOfKind(status, 'run'))}${statusBlock(firstOfKind(status, 'fault'))}${statusBlock(firstOfKind(status, 'safety'))}</div><div class="count"><span class="count-label">${icon('gauge')}CONTADOR ATUAL</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado às ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${signalsSection(machine, status)}${hourlySection(machine)}</article>`;
 }
 
 function renderAreas(items) {

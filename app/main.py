@@ -41,11 +41,12 @@ from .plc import (
     DEFAULT_SLOT,
     EDITABLE_ADDRESSES,
     SIGNAL_LAYOUT,
-    SIGNAL_TYPES,
     FakePLCClient,
     FakePLCProbeClient,
     PLCClient,
     PLCProbeClient,
+    PLCReading,
+    SignalSpec,
     Snap7PLCClient,
     Snap7ProbeClient,
     describe_error,
@@ -344,19 +345,25 @@ def list_machines() -> list[dict]:
     ]
 
 
-def build_signals(labels: dict[str, str], bits: dict[str, bool] | None) -> list[SignalValue]:
+def build_signals(labels: dict[str, str], reading: PLCReading | None) -> list[SignalValue]:
     """Full layout in address order. A None value means the PLC could not be read."""
     return [
         SignalValue(
             address=spec.address,
             label=signal_label(spec, labels),
-            type=SIGNAL_TYPES[spec.address],
+            type=spec.type,
             kind=spec.kind,
             editable=spec.address in EDITABLE_ADDRESSES,
-            value=None if bits is None else bool(bits.get(spec.address)),
+            value=None if reading is None else signal_value(spec, reading),
         )
         for spec in SIGNAL_LAYOUT
     ]
+
+
+def signal_value(spec: SignalSpec, reading: PLCReading) -> bool | int:
+    if spec.type == "DINT":
+        return reading.integers[spec.address]
+    return reading.bits[spec.address]
 
 
 @app.get("/api/machines/{machine_id}/status", response_model=MachineStatus)
@@ -374,7 +381,7 @@ def machine_status(machine_id: int) -> MachineStatus:
             timestamp=reading.timestamp.isoformat(),
             auto=bits["0.0"], run=bits["0.1"], fault=bits["0.2"], safety=bits["0.3"],
             count=reading.count,
-            signals=build_signals(labels, bits),
+            signals=build_signals(labels, reading),
         )
     except (ConnectionError, OSError, RuntimeError, ValueError, ImportError) as error:
         # Polled every few seconds per machine, so keep this at debug level.
@@ -435,7 +442,7 @@ def describe_machine_signals(machine_id: int) -> list[SignalDefinition]:
         SignalDefinition(
             address=spec.address,
             label=signal_label(spec, labels),
-            type=SIGNAL_TYPES[spec.address],
+            type=spec.type,
             kind=spec.kind,
             editable=spec.address in EDITABLE_ADDRESSES,
         )

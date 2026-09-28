@@ -6,6 +6,9 @@ import pytest
 from app.branding import remove_logos
 from app.models import MachineInput
 from app.plc import (
+    BOOL_LAYOUT,
+    DINT_LAYOUT,
+    DINT_SIZE,
     EDITABLE_ADDRESSES,
     LOCKED_ADDRESSES,
     PROBE_READY,
@@ -20,6 +23,7 @@ from app.plc import (
     effective_labels,
     parse_db,
     signal_label,
+    signal_offset,
 )
 from app.security import hash_password, verify_password
 from app.storage import Storage
@@ -36,6 +40,9 @@ def test_parse_standard_layout():
     data[0] |= 1 << 4  # Counter at 0.4, inside the same word as the status bits
     data[14:19] = b"SPCLP"
     data[20:24] = (42).to_bytes(4, "big", signed=True)
+    data[2:6] = (1500).to_bytes(4, "big", signed=True)
+    data[6:10] = (-42).to_bytes(4, "big", signed=True)
+    data[10:14] = (0).to_bytes(4, "big", signed=True)
     reading = parse_db(bytes(data))
     assert reading.bits["0.0"] is True
     assert reading.bits["0.1"] is True
@@ -43,6 +50,8 @@ def test_parse_standard_layout():
     assert reading.bits["0.4"] is True
     assert reading.bits["0.3"] is False
     assert reading.count == 42
+    # DInt is signed, so a negative value must survive the round trip.
+    assert reading.integers == {"2.0": 1500, "6.0": -42, "10.0": 0}
 
 
 def test_parse_db_reports_every_address_even_with_repeated_labels():
@@ -97,12 +106,16 @@ def test_machine_status_reports_every_address_with_labels(monkeypatch):
 
     class FakeClient:
         def read(self, db_number):
-            bits = {spec.address: False for spec in SIGNAL_LAYOUT}
+            bits = {spec.address: False for spec in BOOL_LAYOUT}
             bits["0.0"] = True
             bits["0.2"] = True
             bits["0.3"] = True
             bits["0.4"] = True
-            return PLCReading(timestamp=datetime.now(timezone.utc), bits=bits, count=7)
+            integers = {spec.address: 0 for spec in DINT_LAYOUT}
+            integers["2.0"] = 1500
+            return PLCReading(
+                timestamp=datetime.now(timezone.utc), bits=bits, integers=integers, count=7
+            )
 
     monkeypatch.setattr("app.main.client_for", lambda machine: FakeClient())
     area_id = app_storage.add_area("Test Plant", "Status Area")
@@ -126,8 +139,14 @@ def test_machine_status_reports_every_address_with_labels(monkeypatch):
     assert by_address["0.5"].type == "BOOL"
     assert by_address["0.5"].kind == "custom"
     assert by_address["0.5"].value is False
-    # Only the four status bits are read only in the dashboard editor.
-    assert [item.address for item in status.signals if not item.editable] == ["0.0", "0.1", "0.2", "0.3"]
+    # The DInts travel in the same list, with numbers instead of bits.
+    assert by_address["2.0"].type == "DINT"
+    assert by_address["2.0"].value == 1500
+    assert by_address["6.0"].value == 0
+    # Only the five standard signals are read only in the dashboard editor.
+    assert [item.address for item in status.signals if not item.editable] == [
+        "0.0", "0.1", "0.2", "0.3", "0.4"
+    ]
     app_storage.delete_machine(machine_id)
 
 
@@ -412,62 +431,69 @@ def test_standard_signals_use_the_contract_labels():
     assert labels["0.5"] == "Sinal 0.5"
 
 
-def test_the_contract_has_four_status_bits():
+def test_the_contract_has_five_standard_signals():
     from app.plc import LOCKED_KINDS
 
-    status_bits = [spec for spec in SIGNAL_LAYOUT if spec.kind in LOCKED_KINDS]
-    assert [(spec.address, spec.kind, spec.default_label) for spec in status_bits] == [
+    standard = [spec for spec in SIGNAL_LAYOUT if spec.kind in LOCKED_KINDS]
+    assert [(spec.address, spec.kind, spec.default_label) for spec in standard] == [
         ("0.0", "auto", "Automático"),
         ("0.1", "run", "Produção"),
         ("0.2", "fault", "Falha"),
         ("0.3", "safety", "Segurança"),
+        ("0.4", "counter", "Contador"),
     ]
 
 
 def test_locked_signals_ignore_stored_overrides():
-    # A row left behind by an older version must never rename a status bit.
-    auto, run, fault, safety = SIGNAL_LAYOUT[0], SIGNAL_LAYOUT[1], SIGNAL_LAYOUT[2], SIGNAL_LAYOUT[3]
+    # A row left behind by an older version must never rename a standard signal.
+    auto, run, fault, safety, counter = SIGNAL_LAYOUT[:5]
     assert signal_label(auto, {"0.0": "Outro nome"}) == "Automático"
     assert signal_label(run, {"0.1": "Outro nome"}) == "Produção"
     assert signal_label(fault, {"0.2": "Outro nome"}) == "Falha"
     assert signal_label(safety, {"0.3": "Saude"}) == "Segurança"
+    assert signal_label(counter, {"0.4": "Peças boas"}) == "Contador"
 
 
-def test_the_counter_label_is_editable():
-    counter = next(spec for spec in SIGNAL_LAYOUT if spec.kind == "counter")
-    assert counter.address == "0.4"
-    assert signal_label(counter, {"0.4": "Peças boas"}) == "Peças boas"
-    assert signal_label(counter, {"0.4": "   "}) == "Contador"
-
-
-def test_only_the_status_bits_are_locked():
-    assert LOCKED_ADDRESSES == {"0.0", "0.1", "0.2", "0.3"}
+def test_only_the_standard_signals_are_locked():
+    assert LOCKED_ADDRESSES == {"0.0", "0.1", "0.2", "0.3", "0.4"}
     assert EDITABLE_ADDRESSES == {
-        "0.4", "0.5", "0.6", "0.7",
+        "0.5", "0.6", "0.7",
         "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7",
+        "2.0", "6.0", "10.0",
     }
     assert EDITABLE_ADDRESSES | LOCKED_ADDRESSES == {spec.address for spec in SIGNAL_LAYOUT}
 
 
-def test_the_contract_holds_sixteen_bools():
-    """The PLC block declares exactly 0.0 through 1.7, with no gap and no extra bit."""
+def test_the_contract_holds_sixteen_bools_and_three_integers():
+    """The PLC block declares exactly 16 BOOLs and three DInts, with no gap."""
     assert [spec.address for spec in SIGNAL_LAYOUT] == [
         "0.0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7",
         "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7",
+        "2.0", "6.0", "10.0",
+    ]
+    assert [spec.type for spec in BOOL_LAYOUT] == ["BOOL"] * 16
+    assert [(spec.address, spec.type) for spec in DINT_LAYOUT] == [
+        ("2.0", "DINT"), ("6.0", "DINT"), ("10.0", "DINT")
     ]
 
 
 def test_duplicate_labels_are_detected():
-    assert duplicate_labels({"0.4": "Portao", "0.5": "Portao"}) == ["Portao"]
+    assert duplicate_labels({"0.5": "Portao", "0.6": "Portao"}) == ["Portao"]
     # Case differences would be indistinguishable on the dashboard.
-    assert duplicate_labels({"0.4": "portao", "0.5": "Portao"}) == ["portao"]
-    assert duplicate_labels({"0.4": "Portao", "0.5": "portao"}) == ["Portao"]
-    # A free signal may not steal the name of a fixed one, accents included.
+    assert duplicate_labels({"0.5": "portao", "0.6": "Portao"}) == ["portao"]
+    assert duplicate_labels({"0.5": "Portao", "0.6": "portao"}) == ["Portao"]
+    # A free signal may not steal the name of a standard one, accents included.
     # The counter at 0.4 is read before the free signals, so its own spelling is
     # the one reported when both name the same thing.
     assert duplicate_labels({"0.5": "Contador"}) == ["Contador"]
     assert duplicate_labels({"0.5": "SEGURANCA"}) == ["Segurança"]
     assert duplicate_labels({"0.5": "CONtador"}) == ["Contador"]
+    # An integer label is a label like any other, in both directions.
+    assert duplicate_labels({"6.0": "Int_1"}) == ["Int_1"]
+    assert duplicate_labels({"0.5": "Int_2"}) == ["Int_2"]
+    assert duplicate_labels({"2.0": "Peso", "6.0": "peso"}) == ["Peso"]
+    # Naming an address the way it is already named is not a conflict.
+    assert duplicate_labels({"2.0": "Int_1"}) == []
     assert duplicate_labels({"0.5": "Portao de entrada", "0.6": "Portao de saida"}) == []
     assert duplicate_labels() == []
 
@@ -526,14 +552,36 @@ def test_signal_labels_round_trip_through_the_api():
         response = client.put(
             f"/api/config/machines/{machine_id}/signals",
             headers=headers,
-            json=[{"address": "0.4", "label": "Portao de entrada"}],
+            json=[{"address": "0.5", "label": "Portao de entrada"}],
         )
         assert response.status_code == 200
         after = {item["address"]: item for item in response.json()}
-        assert after["0.4"]["label"] == "Portao de entrada"
-        assert after["0.4"]["type"] == "BOOL"
+        assert after["0.5"]["label"] == "Portao de entrada"
+        assert after["0.5"]["type"] == "BOOL"
         assert after["0.0"]["label"] == SIGNAL_LAYOUT[0].default_label
-        assert app_storage.signal_labels(machine_id) == {"0.4": "Portao de entrada"}
+        assert app_storage.signal_labels(machine_id) == {"0.5": "Portao de entrada"}
+
+        # The three DInts are renamed the same way, and keep their type.
+        response = client.put(
+            f"/api/config/machines/{machine_id}/signals",
+            headers=headers,
+            json=[
+                {"address": "0.5", "label": "Portao de entrada"},
+                {"address": "2.0", "label": "Peso da caixa"},
+                {"address": "10.0", "label": "Temperatura"},
+            ],
+        )
+        assert response.status_code == 200
+        after = {item["address"]: item for item in response.json()}
+        assert after["2.0"]["label"] == "Peso da caixa"
+        assert after["2.0"]["type"] == "DINT"
+        assert after["2.0"]["editable"] is True
+        assert after["10.0"]["label"] == "Temperatura"
+        assert app_storage.signal_labels(machine_id) == {
+            "0.5": "Portao de entrada",
+            "2.0": "Peso da caixa",
+            "10.0": "Temperatura",
+        }
 
         response = client.put(
             f"/api/config/machines/{machine_id}/signals",
@@ -613,8 +661,8 @@ def test_duplicate_signal_labels_are_rejected_through_the_api():
             f"/api/config/machines/{machine_id}/signals",
             headers=headers,
             json=[
-                {"address": "0.4", "label": "Portao de entrada"},
-                {"address": "0.5", "label": "portao de ENTRADA"},
+                {"address": "0.5", "label": "Portao de entrada"},
+                {"address": "0.6", "label": "portao de ENTRADA"},
             ],
         )
         assert response.status_code == 422
@@ -626,18 +674,17 @@ def test_duplicate_signal_labels_are_rejected_through_the_api():
             f"/api/config/machines/{machine_id}/signals",
             headers=headers,
             json=[
-                {"address": "0.4", "label": "Portao de entrada"},
-                {"address": "0.5", "label": "Portao de saida"},
+                {"address": "0.5", "label": "Portao de entrada"},
+                {"address": "0.6", "label": "Portao de saida"},
             ],
         )
         assert response.status_code == 200
         assert app_storage.signal_labels(machine_id) == {
-            "0.4": "Portao de entrada",
-            "0.5": "Portao de saida",
+            "0.5": "Portao de entrada",
+            "0.6": "Portao de saida",
         }
 
-        # A free signal may not adopt the name of a fixed one either. The counter
-        # at 0.4 counts, so 0.5 is the first address that is only a free signal.
+        # A free signal may not adopt the name of a standard one either.
         response = client.put(
             f"/api/config/machines/{machine_id}/signals",
             headers=headers,
@@ -645,16 +692,74 @@ def test_duplicate_signal_labels_are_rejected_through_the_api():
         )
         assert response.status_code == 422
         assert app_storage.signal_labels(machine_id) == {
-            "0.4": "Portao de entrada",
-            "0.5": "Portao de saida",
+            "0.5": "Portao de entrada",
+            "0.6": "Portao de saida",
+        }
+
+        # An integer label counts for the same uniqueness rule. The payload
+        # replaces the whole set, so both addresses go in the same request.
+        response = client.put(
+            f"/api/config/machines/{machine_id}/signals",
+            headers=headers,
+            json=[
+                {"address": "0.5", "label": "Portao de entrada"},
+                {"address": "2.0", "label": "portao de ENTRADA"},
+            ],
+        )
+        assert response.status_code == 422
+
+        # And the counter is part of the contract now, so it is refused too.
+        response = client.put(
+            f"/api/config/machines/{machine_id}/signals",
+            headers=headers,
+            json=[{"address": "0.4", "label": "Peças boas"}],
+        )
+        assert response.status_code == 422
+        assert app_storage.signal_labels(machine_id) == {
+            "0.5": "Portao de entrada",
+            "0.6": "Portao de saida",
         }
     finally:
         sessions.discard("test-token-duplicates")
         app_storage.delete_machine(machine_id)
 
 
-def test_the_counter_can_be_renamed_through_the_api():
+def test_the_three_integers_can_be_renamed_through_the_api():
     from app.main import sessions
+
+    client = _admin_client("test-token-integers")
+    machine_id = _temp_machine()
+    headers = {"Authorization": "Bearer test-token-integers"}
+    try:
+        response = client.put(
+            f"/api/config/machines/{machine_id}/signals",
+            headers=headers,
+            json=[
+                {"address": "2.0", "label": "Peso da caixa"},
+                {"address": "6.0", "label": "Caixas rejeitadas"},
+                {"address": "10.0", "label": "Temperatura"},
+            ],
+        )
+        assert response.status_code == 200
+        by_address = {item["address"]: item for item in response.json()}
+        assert by_address["2.0"]["label"] == "Peso da caixa"
+        assert by_address["6.0"]["label"] == "Caixas rejeitadas"
+        assert by_address["10.0"]["label"] == "Temperatura"
+        for address in ("2.0", "6.0", "10.0"):
+            assert by_address[address]["type"] == "DINT"
+            assert by_address[address]["editable"] is True
+        assert app_storage.signal_labels(machine_id) == {
+            "2.0": "Peso da caixa",
+            "6.0": "Caixas rejeitadas",
+            "10.0": "Temperatura",
+        }
+    finally:
+        sessions.discard("test-token-integers")
+        app_storage.delete_machine(machine_id)
+
+
+def test_the_counter_cannot_be_renamed_through_the_api():
+    from app.main import describe_machine_signals, sessions
 
     client = _admin_client("test-token-counter")
     machine_id = _temp_machine()
@@ -665,12 +770,12 @@ def test_the_counter_can_be_renamed_through_the_api():
             headers=headers,
             json=[{"address": "0.4", "label": "Peças boas"}],
         )
-        assert response.status_code == 200
-        by_address = {item["address"]: item for item in response.json()}
-        assert by_address["0.4"]["label"] == "Peças boas"
-        assert by_address["0.4"]["editable"] is True
-        assert by_address["0.0"]["editable"] is False
-        assert app_storage.signal_labels(machine_id) == {"0.4": "Peças boas"}
+        assert response.status_code == 422
+        assert "0.4" in response.json()["detail"]
+        assert app_storage.signal_labels(machine_id) == {}
+        by_address = {item.address: item for item in describe_machine_signals(machine_id)}
+        assert by_address["0.4"].label == "Contador"
+        assert by_address["0.4"].editable is False
     finally:
         sessions.discard("test-token-counter")
         app_storage.delete_machine(machine_id)
@@ -1250,9 +1355,11 @@ def test_layout_matches_the_customer_db():
     # 24 bytes: 0..23, the last byte of Count inclusive.
     assert READ_SIZE == 24
 
-    # The whole BOOL word must be inside bytes 0-1, the signature must end before
-    # the counter starts, and Count must be the last thing the read covers.
-    assert {spec.address.split(".")[0] for spec in SIGNAL_LAYOUT} == {"0", "1"}
+    # The whole BOOL word must be inside bytes 0-1, the three DInts are inside the
+    # read as well, and the counter must be the last thing the read covers.
+    assert {spec.address.split(".")[0] for spec in BOOL_LAYOUT} == {"0", "1"}
+    assert [signal_offset(spec.address) for spec in DINT_LAYOUT] == [2, 6, 10]
+    assert max(signal_offset(spec.address) for spec in DINT_LAYOUT) + DINT_SIZE <= READ_SIZE
     assert SIGNATURE_OFFSET + len(SIGNATURE) == 19 < COUNT_OFFSET
     assert COUNT_OFFSET + COUNT_SIZE == READ_SIZE
 

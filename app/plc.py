@@ -22,12 +22,13 @@ class SignalSpec:
     address: str
     kind: str
     default_label: str
+    type: str = "BOOL"
 
 
-# Standard contract: the 16 BOOL signals fill 0.0 through 1.7, which is exactly the
-# layout the PLC block declares. 0.0-0.3 are the four standard status bits (AUTO,
-# RUN, FAULT, SAFETY) that drive the dashboard logic; COUNTER is the BOOL at 0.4.
-# Their labels are part of the contract and cannot be renamed.
+# Standard contract, which is exactly the layout the PLC block declares: the 16
+# BOOLs fill 0.0 through 1.7 and the three DInts sit at 2.0, 6.0 and 10.0. The
+# first five are the standard signals (AUTO, RUN, FAULT, SAFETY, COUNTER); their
+# labels are part of the contract and cannot be renamed.
 SIGNAL_LAYOUT: tuple[SignalSpec, ...] = (
     SignalSpec("0.0", "auto", "Automático"),
     SignalSpec("0.1", "run", "Produção"),
@@ -36,24 +37,30 @@ SIGNAL_LAYOUT: tuple[SignalSpec, ...] = (
     SignalSpec("0.4", "counter", "Contador"),
     *(SignalSpec(f"0.{bit}", "custom", f"Sinal 0.{bit}") for bit in range(5, 8)),
     *(SignalSpec(f"1.{bit}", "custom", f"Sinal 1.{bit}") for bit in range(8)),
+    SignalSpec("2.0", "integer", "Int_1", "DINT"),
+    SignalSpec("6.0", "integer", "Int_2", "DINT"),
+    SignalSpec("10.0", "integer", "Int_3", "DINT"),
 )
+
+BOOL_LAYOUT = tuple(spec for spec in SIGNAL_LAYOUT if spec.type == "BOOL")
+DINT_LAYOUT = tuple(spec for spec in SIGNAL_LAYOUT if spec.type == "DINT")
+DINT_SIZE = 4
 
 SIGNAL_ADDRESSES = [spec.address for spec in SIGNAL_LAYOUT]
 KNOWN_ADDRESSES = frozenset(SIGNAL_ADDRESSES)
-# The four status bits drive the dashboard status blocks, so their labels belong
-# to the contract. Every other signal, the counter included, accepts a user label.
-LOCKED_KINDS = frozenset({"auto", "run", "fault", "safety"})
+# The five standard signals drive the dashboard blocks and the hourly totals, so
+# their labels belong to the contract. Every other signal accepts a user label.
+LOCKED_KINDS = frozenset({"auto", "run", "fault", "safety", "counter"})
 EDITABLE_ADDRESSES = frozenset(
     spec.address for spec in SIGNAL_LAYOUT if spec.kind not in LOCKED_KINDS
 )
 LOCKED_ADDRESSES = frozenset(SIGNAL_ADDRESSES) - EDITABLE_ADDRESSES
-SIGNAL_TYPES = {spec.address: "BOOL" for spec in SIGNAL_LAYOUT}
+SIGNAL_TYPES = {spec.address: spec.type for spec in SIGNAL_LAYOUT}
 
 # Absolute layout of the customer DB, read from the block in the field:
 #
 #   DBX0.0-1.7   16 BOOL signals (Auto, Run, Fault, Safety, Counter, Signal_5..15)
-#   DBD2.0-13.0  Int_1, Int_2, Int_3; declared by the PLC but not part of the
-#                contract, so they are crossed by the read and then ignored
+#   DBD2.0-13.0  Int_1, Int_2 and Int_3, signed DInts with editable labels
 #   DBX14.0-18.0 Type, ARRAY[0..4] OF CHAR = 'S','P','C','L','P'
 #   DBD20.0      Count (DInt, big-endian)
 #
@@ -92,6 +99,7 @@ def describe_error(error: BaseException) -> str:
 class PLCReading:
     timestamp: datetime
     bits: dict[str, bool]
+    integers: dict[str, int]
     count: int
 
 
@@ -102,6 +110,16 @@ class PLCClient(Protocol):
 def bit_value(data: bytes, address: str) -> bool:
     byte, bit = (int(part) for part in address.split("."))
     return bool(data[byte] & (1 << bit))
+
+
+def signal_offset(address: str) -> int:
+    """Byte offset of an address. The bit part only means something for a BOOL."""
+    return int(address.split(".")[0])
+
+
+def dint_value(data: bytes, address: str) -> int:
+    offset = signal_offset(address)
+    return struct.unpack(">i", data[offset:offset + DINT_SIZE])[0]
 
 
 def signal_label(spec: SignalSpec, labels: dict[str, str] | None = None) -> str:
@@ -150,8 +168,7 @@ def parse_db(data: bytes) -> PLCReading:
         raise ValueError(f"PLC DB data must contain at least {READ_SIZE} bytes")
     return PLCReading(
         timestamp=datetime.now(timezone.utc),
-        bits={spec.address: bit_value(data, spec.address) for spec in SIGNAL_LAYOUT},
-        count=struct.unpack(">i", data[COUNT_OFFSET:COUNT_OFFSET + COUNT_SIZE])[0],
+        bits={spec.address: bit_value(data, spec.address) for spec in SIGNAL_LAYOUT},        integers={spec.address: dint_value(data, spec.address) for spec in DINT_LAYOUT},        count=struct.unpack(">i", data[COUNT_OFFSET:COUNT_OFFSET + COUNT_SIZE])[0],
     )
 
 
@@ -167,6 +184,9 @@ class FakePLCClient:
         # Byte 0 carries AUTO (0.0), RUN (0.1), SAFETY (0.3) and the counter (0.4);
         # FAULT (0.2) stays clear.
         data[0] = 0b00011011
+        data[2:6] = (1500).to_bytes(DINT_SIZE, "big", signed=True)
+        data[6:10] = (42).to_bytes(DINT_SIZE, "big", signed=True)
+        data[10:14] = (7).to_bytes(DINT_SIZE, "big", signed=True)
         # The simulator carries the same signature and offsets as the real block,
         # so a machine registered as "fake" behaves like a prepared PLC.
         data[SIGNATURE_OFFSET:SIGNATURE_OFFSET + len(SIGNATURE)] = SIGNATURE

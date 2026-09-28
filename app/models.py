@@ -97,8 +97,9 @@ class SignalDefinition(BaseModel):
 
 
 class SignalValue(SignalDefinition):
-    # None means the PLC could not be read, not that the bit is false.
-    value: bool | None = None
+    # None means the PLC could not be read, not that the bit is false or zero.
+    # A BOOL stays a boolean and a DINT stays a number in the JSON payload.
+    value: bool | int | None = None
 
 
 class SignalLabelInput(BaseModel):
