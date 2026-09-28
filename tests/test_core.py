@@ -106,6 +106,8 @@ def test_machine_status_reports_every_address_with_labels(monkeypatch):
     assert by_address["0.3"].type == "BOOL"
     assert by_address["0.3"].kind == "custom"
     assert by_address["0.3"].value is False
+    # Only the three status bits are read only in the dashboard editor.
+    assert [item.address for item in status.signals if not item.editable] == ["0.0", "0.1", "0.2"]
     app_storage.delete_machine(machine_id)
 
 
@@ -330,19 +332,26 @@ def test_standard_signals_use_the_contract_labels():
     assert labels["0.3"] == "Sinal 0.3"
 
 
-def test_standard_signals_ignore_stored_overrides():
-    # A row left behind by an older version must never rename a fixed signal.
-    fault, auto, counter = SIGNAL_LAYOUT[2], SIGNAL_LAYOUT[0], SIGNAL_LAYOUT[-1]
-    assert signal_label(fault, {"0.2": "Saude"}) == "Segurança"
+def test_locked_signals_ignore_stored_overrides():
+    # A row left behind by an older version must never rename AUTO, RUN or FAULT.
+    auto, run, fault = SIGNAL_LAYOUT[0], SIGNAL_LAYOUT[1], SIGNAL_LAYOUT[2]
     assert signal_label(auto, {"0.0": "Outro nome"}) == "Automático"
-    assert signal_label(counter, {"2.0": "Pecas"}) == "Contador"
+    assert signal_label(run, {"0.1": "Outro nome"}) == "Produção"
+    assert signal_label(fault, {"0.2": "Saude"}) == "Segurança"
 
 
-def test_only_free_form_signals_are_editable():
-    assert LOCKED_ADDRESSES == {"0.0", "0.1", "0.2", "2.0"}
+def test_the_counter_label_is_editable():
+    counter = SIGNAL_LAYOUT[-1]
+    assert signal_label(counter, {"2.0": "Peças boas"}) == "Peças boas"
+    assert signal_label(counter, {"2.0": "   "}) == "Contador"
+
+
+def test_only_the_status_bits_are_locked():
+    assert LOCKED_ADDRESSES == {"0.0", "0.1", "0.2"}
     assert EDITABLE_ADDRESSES == {
         "0.3", "0.4", "0.5", "0.6", "0.7",
         "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7",
+        "2.0",
     }
     assert EDITABLE_ADDRESSES | LOCKED_ADDRESSES == {spec.address for spec in SIGNAL_LAYOUT}
 
@@ -537,6 +546,29 @@ def test_duplicate_signal_labels_are_rejected_through_the_api():
         }
     finally:
         sessions.discard("test-token-duplicates")
+        app_storage.delete_machine(machine_id)
+
+
+def test_the_counter_can_be_renamed_through_the_api():
+    from app.main import sessions
+
+    client = _admin_client("test-token-counter")
+    machine_id = _temp_machine()
+    headers = {"Authorization": "Bearer test-token-counter"}
+    try:
+        response = client.put(
+            f"/api/config/machines/{machine_id}/signals",
+            headers=headers,
+            json=[{"address": "2.0", "label": "Peças boas"}],
+        )
+        assert response.status_code == 200
+        by_address = {item["address"]: item for item in response.json()}
+        assert by_address["2.0"]["label"] == "Peças boas"
+        assert by_address["2.0"]["editable"] is True
+        assert by_address["0.0"]["editable"] is False
+        assert app_storage.signal_labels(machine_id) == {"2.0": "Peças boas"}
+    finally:
+        sessions.discard("test-token-counter")
         app_storage.delete_machine(machine_id)
 
 

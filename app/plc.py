@@ -37,8 +37,12 @@ SIGNAL_LAYOUT: tuple[SignalSpec, ...] = (
 
 SIGNAL_ADDRESSES = [spec.address for spec in SIGNAL_LAYOUT]
 KNOWN_ADDRESSES = frozenset(SIGNAL_ADDRESSES)
-# Only free-form signals accept a user label; every other kind is fixed.
-EDITABLE_ADDRESSES = frozenset(spec.address for spec in SIGNAL_LAYOUT if spec.kind == "custom")
+# 0.0/0.1/0.2 drive the dashboard status logic, so their labels belong to the
+# contract. Every other signal, the counter included, accepts a user label.
+LOCKED_KINDS = frozenset({"auto", "run", "fault"})
+EDITABLE_ADDRESSES = frozenset(
+    spec.address for spec in SIGNAL_LAYOUT if spec.kind not in LOCKED_KINDS
+)
 LOCKED_ADDRESSES = frozenset(SIGNAL_ADDRESSES) - EDITABLE_ADDRESSES
 SIGNAL_TYPES = {spec.address: "BOOL" for spec in SIGNAL_LAYOUT}
 
@@ -73,8 +77,8 @@ def bit_value(data: bytes, address: str) -> bool:
 def signal_label(spec: SignalSpec, labels: dict[str, str] | None = None) -> str:
     """Return the display label for one signal.
 
-    Only free-form signals can be renamed, so a stored override for a fixed
-    signal (for example a row left behind by an older version) is ignored.
+    AUTO, RUN and FAULT keep the contract label, so a stored override for them
+    (for example a row left behind by an older version) is ignored.
     """
     if spec.address not in EDITABLE_ADDRESSES:
         return spec.default_label

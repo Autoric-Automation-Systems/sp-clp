@@ -373,7 +373,7 @@ function duplicateLabels() {
     firstSeen.set(key, String(value).trim());
   }
   editorSignals.forEach(function (signal) {
-    if (signal.kind !== 'custom') consider(signal.label);
+    if (!signal.editable) consider(signal.label);
   });
   labelInputs().forEach(function (input) { consider(input.value); });
   return repeated;
@@ -391,7 +391,7 @@ function reviewLabels() {
   if (repeated.size > 0) {
     target.textContent = 'Cada sinal precisa de um nome próprio. Repetido: ' + Array.from(repeated.values()).join(', ');
   } else {
-    const locked = editorSignals.filter(function (signal) { return signal.kind !== 'custom'; }).length;
+    const locked = editorSignals.filter(function (signal) { return !signal.editable; }).length;
     target.textContent = `${locked} sinais fixos do contrato permanecem travados.`;
   }
   return repeated.size === 0;
@@ -419,7 +419,7 @@ async function openSignalLabels(machineId) {
   editingLabelsFor = machineId;
   editorSignals = signals;
   document.querySelector('#signals-editor').innerHTML = signals.map(function (signal) {
-    return signal.kind === 'custom' ? editableSignalRow(signal) : lockedSignalRow(signal);
+    return signal.editable ? editableSignalRow(signal) : lockedSignalRow(signal);
   }).join('');
   labelInputs().forEach(function (input) { input.oninput = reviewLabels; });
   reviewLabels();

@@ -43,6 +43,8 @@ class SignalDefinition(BaseModel):
     label: str
     type: str
     kind: str
+    # Fixed signals keep the contract label; the dashboard renders them read only.
+    editable: bool
 
 
 class SignalValue(SignalDefinition):

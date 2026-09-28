@@ -27,10 +27,10 @@ Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O
 
 - Rack padrão: `0`
 - Slot padrão: `1`
-- Sinais fixos: `AUTO` (`0.0`), `RUN` (`0.1`), `FAULT`/Segurança (`0.2`) e `Counter` (`2.0`). Nomes e tipos são do contrato e **não podem ser alterados**.
-- Sinais adicionais: posições fixas de `0.3` a `0.7` e de `1.0` a `1.7`, apenas o rótulo é editável
-- Cada sinal precisa de um rótulo próprio. A comparação ignora maiúsculas e acentos, e um sinal livre também não pode adotar o nome de um sinal fixo
-- `Counter`: `BOOL` em `DBX2.0`
+- Sinais fixos: `AUTO` (`0.0`), `RUN` (`0.1`) e `FAULT`/Segurança (`0.2`). Nome e tipo são do contrato e **não podem ser alterados**.
+- Sinais adicionais: posições fixas de `0.3` a `0.7` e de `1.0` a `1.7`; apenas o rótulo é editável
+- Cada sinal precisa de um rótulo próprio. A comparação ignora maiúsculas e acentos, e um sinal renomeável também não pode adotar o nome de um sinal fixo
+- `Counter`: `BOOL` em `DBX2.0`, com rótulo editável
 - `Count`: `DInt` em `DB4.0`
 - O contador reinicia quando o CLP reinicia; qualquer redução do valor inicia nova linha de base e não produz valor negativo
 - Totais horários usam o fuso configurado para cada máquina

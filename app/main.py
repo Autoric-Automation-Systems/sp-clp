@@ -133,6 +133,7 @@ def build_signals(labels: dict[str, str], bits: dict[str, bool] | None) -> list[
             label=signal_label(spec, labels),
             type=SIGNAL_TYPES[spec.address],
             kind=spec.kind,
+            editable=spec.address in EDITABLE_ADDRESSES,
             value=None if bits is None else bool(bits.get(spec.address)),
         )
         for spec in SIGNAL_LAYOUT
@@ -188,6 +189,7 @@ def describe_machine_signals(machine_id: int) -> list[SignalDefinition]:
             label=signal_label(spec, labels),
             type=SIGNAL_TYPES[spec.address],
             kind=spec.kind,
+            editable=spec.address in EDITABLE_ADDRESSES,
         )
         for spec in SIGNAL_LAYOUT
     ]
