@@ -37,9 +37,9 @@ SIGNAL_LAYOUT: tuple[SignalSpec, ...] = (
     SignalSpec("0.4", "counter", "Contador"),
     *(SignalSpec(f"0.{bit}", "custom", f"Sinal 0.{bit}") for bit in range(5, 8)),
     *(SignalSpec(f"1.{bit}", "custom", f"Sinal 1.{bit}") for bit in range(8)),
-    SignalSpec("2.0", "integer", "Int_1", "DINT"),
-    SignalSpec("6.0", "integer", "Int_2", "DINT"),
-    SignalSpec("10.0", "integer", "Int_3", "DINT"),
+    SignalSpec("2.0", "integer", "Valor 1", "DINT"),
+    SignalSpec("6.0", "integer", "Valor 2", "DINT"),
+    SignalSpec("10.0", "integer", "Valor 3", "DINT"),
 )
 
 BOOL_LAYOUT = tuple(spec for spec in SIGNAL_LAYOUT if spec.type == "BOOL")
@@ -60,7 +60,7 @@ SIGNAL_TYPES = {spec.address: spec.type for spec in SIGNAL_LAYOUT}
 # Absolute layout of the customer DB, read from the block in the field:
 #
 #   DBX0.0-1.7   16 BOOL signals (Auto, Run, Fault, Safety, Counter, Signal_5..15)
-#   DBD2.0-13.0  Int_1, Int_2 and Int_3, signed DInts with editable labels
+#   DBD2.0-13.0  Valor 1, Valor 2 and Valor 3, signed DInts with editable labels
 #   DBX14.0-18.0 Type, ARRAY[0..4] OF CHAR = 'S','P','C','L','P'
 #   DBD20.0      Count (DInt, big-endian)
 #

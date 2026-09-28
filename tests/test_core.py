@@ -489,11 +489,11 @@ def test_duplicate_labels_are_detected():
     assert duplicate_labels({"0.5": "SEGURANCA"}) == ["Segurança"]
     assert duplicate_labels({"0.5": "CONtador"}) == ["Contador"]
     # An integer label is a label like any other, in both directions.
-    assert duplicate_labels({"6.0": "Int_1"}) == ["Int_1"]
-    assert duplicate_labels({"0.5": "Int_2"}) == ["Int_2"]
+    assert duplicate_labels({"6.0": "Valor 1"}) == ["Valor 1"]
+    assert duplicate_labels({"0.5": "Valor 2"}) == ["Valor 2"]
     assert duplicate_labels({"2.0": "Peso", "6.0": "peso"}) == ["Peso"]
     # Naming an address the way it is already named is not a conflict.
-    assert duplicate_labels({"2.0": "Int_1"}) == []
+    assert duplicate_labels({"2.0": "Valor 1"}) == []
     assert duplicate_labels({"0.5": "Portao de entrada", "0.6": "Portao de saida"}) == []
     assert duplicate_labels() == []
 
