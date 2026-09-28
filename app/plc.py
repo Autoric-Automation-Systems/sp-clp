@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import struct
 import threading
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
@@ -23,11 +24,12 @@ class SignalSpec:
 
 
 # Standard contract: BOOL signals occupy 0.0 through 1.7, COUNTER is a BOOL at 2.0.
-# 0.0/0.1/0.2 are the standard AUTO/RUN/FAULT status bits used by the dashboard logic.
+# 0.0/0.1/0.2 are the standard AUTO/RUN/SAFETY status bits used by the dashboard
+# logic. Their labels are part of the contract and cannot be renamed by the user.
 SIGNAL_LAYOUT: tuple[SignalSpec, ...] = (
-    SignalSpec("0.0", "auto", "Automatico"),
-    SignalSpec("0.1", "run", "Producao"),
-    SignalSpec("0.2", "fault", "Saude"),
+    SignalSpec("0.0", "auto", "Automático"),
+    SignalSpec("0.1", "run", "Produção"),
+    SignalSpec("0.2", "fault", "Segurança"),
     *(SignalSpec(f"0.{bit}", "custom", f"Sinal 0.{bit}") for bit in range(3, 8)),
     *(SignalSpec(f"1.{bit}", "custom", f"Sinal 1.{bit}") for bit in range(8)),
     SignalSpec("2.0", "counter", "Contador"),
@@ -35,6 +37,9 @@ SIGNAL_LAYOUT: tuple[SignalSpec, ...] = (
 
 SIGNAL_ADDRESSES = [spec.address for spec in SIGNAL_LAYOUT]
 KNOWN_ADDRESSES = frozenset(SIGNAL_ADDRESSES)
+# Only free-form signals accept a user label; every other kind is fixed.
+EDITABLE_ADDRESSES = frozenset(spec.address for spec in SIGNAL_LAYOUT if spec.kind == "custom")
+LOCKED_ADDRESSES = frozenset(SIGNAL_ADDRESSES) - EDITABLE_ADDRESSES
 SIGNAL_TYPES = {spec.address: "BOOL" for spec in SIGNAL_LAYOUT}
 
 
@@ -66,13 +71,47 @@ def bit_value(data: bytes, address: str) -> bool:
 
 
 def signal_label(spec: SignalSpec, labels: dict[str, str] | None = None) -> str:
-    """Return the configured label, falling back to the documented default."""
+    """Return the display label for one signal.
+
+    Only free-form signals can be renamed, so a stored override for a fixed
+    signal (for example a row left behind by an older version) is ignored.
+    """
+    if spec.address not in EDITABLE_ADDRESSES:
+        return spec.default_label
     configured = (labels or {}).get(spec.address, "").strip()
     return configured or spec.default_label
 
 
+def effective_labels(overrides: dict[str, str] | None = None) -> dict[str, str]:
+    """Resolve the label of every address in the contract."""
+    return {spec.address: signal_label(spec, overrides) for spec in SIGNAL_LAYOUT}
+
+
+def fold_label(label: str) -> str:
+    """Comparison key for labels.
+
+    Ignores case and accents because "Seguranca" and "Segurança" would be read as
+    the same word on the dashboard.
+    """
+    decomposed = unicodedata.normalize("NFKD", label.casefold())
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
+def duplicate_labels(overrides: dict[str, str] | None = None) -> list[str]:
+    """Return every label that would end up used by more than one address."""
+    seen: dict[str, str] = {}
+    repeated: set[str] = set()
+    for label in effective_labels(overrides).values():
+        key = fold_label(label)
+        if key in seen:
+            repeated.add(seen[key])
+        else:
+            seen[key] = label
+    return sorted(repeated)
+
+
 def parse_db(data: bytes) -> PLCReading:
-    """Readings are keyed by address: labels are user editable and may repeat."""
+    """Readings are keyed by address: two signals may never share a label."""
     if len(data) < 8:
         raise ValueError("PLC DB data must contain at least 8 bytes")
     return PLCReading(

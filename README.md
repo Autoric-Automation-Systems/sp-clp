@@ -27,8 +27,9 @@ Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O
 
 - Rack padrão: `0`
 - Slot padrão: `1`
-- `AUTO`, `RUN` e `FAULT`: bits `0.0`, `0.1` e `0.2`
-- Sinais adicionais: posições fixas até `1.7`, apenas renomeáveis
+- Sinais fixos: `AUTO` (`0.0`), `RUN` (`0.1`), `FAULT`/Segurança (`0.2`) e `Counter` (`2.0`). Nomes e tipos são do contrato e **não podem ser alterados**.
+- Sinais adicionais: posições fixas de `0.3` a `0.7` e de `1.0` a `1.7`, apenas o rótulo é editável
+- Cada sinal precisa de um rótulo próprio. A comparação ignora maiúsculas e acentos, e um sinal livre também não pode adotar o nome de um sinal fixo
 - `Counter`: `BOOL` em `DBX2.0`
 - `Count`: `DInt` em `DB4.0`
 - O contador reinicia quando o CLP reinicia; qualquer redução do valor inicia nova linha de base e não produz valor negativo
@@ -41,9 +42,18 @@ Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O
 - `app/storage.py`: SQLite, amostras e totais horários
 - `app/security.py`: hash de senha PBKDF2
 - `app/static/`: dashboard HTML/CSS/JavaScript
+- `app/static/icons.js`: ícones do [Lucide](https://lucide.dev) gerados por `scripts/build_icons.py` e servidos localmente, sem CDN
 - `tests/`: testes sem equipamento físico
 
 A comunicação real com um CLP ainda exige teste no equipamento do cliente.
+
+O banco fica em `data/sp-clp.sqlite3`. Defina `SP_CLP_DB` para apontar para outro arquivo; a suíte de testes usa essa variável para nunca escrever no banco de desenvolvimento.
+
+Para regenerar os ícones é preciso internet (o script baixa uma versão fixa do Lucide):
+
+```bash
+python scripts/build_icons.py
+```
 
 ## Gerar o executável Windows
 

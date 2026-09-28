@@ -22,7 +22,7 @@ class MachineInput(BaseModel):
     @classmethod
     def _known_timezone(cls, value: str) -> str:
         if not is_known_zone(value):
-            raise ValueError("Fuso horario IANA desconhecido; use por exemplo America/Sao_Paulo")
+            raise ValueError("Fuso horário IANA desconhecido; use por exemplo America/Sao_Paulo")
         return value
 
 
@@ -58,7 +58,7 @@ class SignalLabelInput(BaseModel):
     @classmethod
     def _known_address(cls, value: str) -> str:
         if value not in KNOWN_ADDRESSES:
-            raise ValueError("Endereco desconhecido: o endereco e o tipo nao podem ser alterados")
+            raise ValueError("Endereço desconhecido: o endereço e o tipo não podem ser alterados")
         return value
 
     @field_validator("label")
@@ -66,7 +66,7 @@ class SignalLabelInput(BaseModel):
     def _single_line(cls, value: str) -> str:
         cleaned = value.strip()
         if "\n" in cleaned or "\r" in cleaned:
-            raise ValueError("Rotulo deve ocupar uma unica linha")
+            raise ValueError("Rótulo deve ocupar uma única linha")
         return cleaned
 
 

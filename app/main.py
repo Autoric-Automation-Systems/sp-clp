@@ -20,12 +20,14 @@ from .models import (
     SignalValue,
 )
 from .plc import (
+    EDITABLE_ADDRESSES,
     SIGNAL_LAYOUT,
     SIGNAL_TYPES,
     FakePLCClient,
     PLCClient,
     Snap7PLCClient,
     describe_error,
+    duplicate_labels,
     signal_label,
 )
 from .security import hash_password, verify_password
@@ -41,10 +43,13 @@ sessions: set[str] = set()
 plc_clients: dict[tuple[str, int, int], PLCClient] = {}
 logger = logging.getLogger("sp_clp")
 
+# Shown verbatim in the dashboard, so keep the user facing messages accented.
+MACHINE_NOT_FOUND = "Máquina não encontrada"
+
 
 def require_admin(authorization: str | None = Header(default=None)) -> None:
     if not authorization or not authorization.startswith("Bearer ") or authorization[7:] not in sessions:
-        raise HTTPException(status_code=401, detail="Autenticacao necessaria")
+        raise HTTPException(status_code=401, detail="Autenticação necessária")
 
 
 def client_for(machine) -> PLCClient:
@@ -70,7 +75,7 @@ def setup_status() -> dict[str, bool]:
 @app.post("/api/setup/password", status_code=204)
 def setup_password(payload: SetupPassword) -> None:
     if storage.get_setting("password_hash") is not None:
-        raise HTTPException(status_code=409, detail="Senha ja configurada")
+        raise HTTPException(status_code=409, detail="Senha já configurada")
     storage.set_setting("password_hash", hash_password(payload.password))
 
 
@@ -78,7 +83,7 @@ def setup_password(payload: SetupPassword) -> None:
 def login(payload: LoginRequest) -> dict[str, str]:
     encoded = storage.get_setting("password_hash")
     if not encoded or not verify_password(payload.password, encoded):
-        raise HTTPException(status_code=401, detail="Senha invalida")
+        raise HTTPException(status_code=401, detail="Senha inválida")
     token = secrets.token_urlsafe(32)
     sessions.add(token)
     return {"token": token}
@@ -97,14 +102,14 @@ def list_areas() -> list[dict]:
 @app.post("/api/config/areas/{area_id}/machines", status_code=201, dependencies=[Depends(require_admin)])
 def create_machine(area_id: int, payload: MachineInput) -> dict[str, int]:
     if storage.get_area(area_id) is None:
-        raise HTTPException(status_code=400, detail="Area invalida")
+        raise HTTPException(status_code=400, detail="Área inválida")
     return {"id": storage.add_machine(area_id, payload.name, payload.ip, payload.db_number, payload.timezone)}
 
 
 @app.put("/api/config/machines/{machine_id}", dependencies=[Depends(require_admin)])
 def update_machine(machine_id: int, payload: MachineInput) -> dict[str, int]:
     if storage.get_machine(machine_id) is None:
-        raise HTTPException(status_code=404, detail="Maquina nao encontrada")
+        raise HTTPException(status_code=404, detail=MACHINE_NOT_FOUND)
     storage.update_machine(machine_id, payload.name, payload.ip, payload.db_number, payload.timezone)
     return {"id": machine_id}
 
@@ -112,7 +117,7 @@ def update_machine(machine_id: int, payload: MachineInput) -> dict[str, int]:
 @app.delete("/api/config/machines/{machine_id}", dependencies=[Depends(require_admin)])
 def delete_machine(machine_id: int) -> None:
     if not storage.delete_machine(machine_id):
-        raise HTTPException(status_code=404, detail="Maquina nao encontrada")
+        raise HTTPException(status_code=404, detail=MACHINE_NOT_FOUND)
 
 
 @app.get("/api/machines")
@@ -138,7 +143,7 @@ def build_signals(labels: dict[str, str], bits: dict[str, bool] | None) -> list[
 def machine_status(machine_id: int) -> MachineStatus:
     machine = storage.get_machine(machine_id)
     if machine is None:
-        raise HTTPException(status_code=404, detail="Maquina nao encontrada")
+        raise HTTPException(status_code=404, detail=MACHINE_NOT_FOUND)
     labels = storage.signal_labels(machine_id)
     try:
         reading = client_for(machine).read(machine["db_number"])
@@ -164,7 +169,7 @@ def machine_status(machine_id: int) -> MachineStatus:
 def hourly_counts(machine_id: int, _: None = Query(default=None)) -> list[HourlyCount]:
     machine = storage.get_machine(machine_id)
     if machine is None:
-        raise HTTPException(status_code=404, detail="Maquina nao encontrada")
+        raise HTTPException(status_code=404, detail=MACHINE_NOT_FOUND)
     return [
         HourlyCount(
             hour_start=row["hour_start"],
@@ -191,7 +196,7 @@ def describe_machine_signals(machine_id: int) -> list[SignalDefinition]:
 @app.get("/api/config/machines/{machine_id}/signals", dependencies=[Depends(require_admin)])
 def get_machine_signals(machine_id: int) -> list[SignalDefinition]:
     if storage.get_machine(machine_id) is None:
-        raise HTTPException(status_code=404, detail="Maquina nao encontrada")
+        raise HTTPException(status_code=404, detail=MACHINE_NOT_FOUND)
     return describe_machine_signals(machine_id)
 
 
@@ -199,7 +204,20 @@ def get_machine_signals(machine_id: int) -> list[SignalDefinition]:
 def update_machine_signals(machine_id: int, payload: list[SignalLabelInput]) -> list[SignalDefinition]:
     if storage.get_machine(machine_id) is None:
         raise HTTPException(status_code=404, detail="Maquina nao encontrada")
-    storage.set_signal_labels(machine_id, {item.address: item.label for item in payload})
+    locked = sorted({item.address for item in payload if item.address not in EDITABLE_ADDRESSES})
+    if locked:
+        raise HTTPException(
+            status_code=422,
+            detail="Sinais fixos não podem ser renomeados: " + ", ".join(locked),
+        )
+    overrides = {item.address: item.label for item in payload}
+    repeated = duplicate_labels(overrides)
+    if repeated:
+        raise HTTPException(
+            status_code=422,
+            detail="Cada sinal precisa de um rótulo próprio. Repetidos: " + ", ".join(repeated),
+        )
+    storage.set_signal_labels(machine_id, overrides)
     return describe_machine_signals(machine_id)
 
 

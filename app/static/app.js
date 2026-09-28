@@ -13,6 +13,8 @@ const menu = document.querySelector('#main-menu');
 const menuBackdrop = document.querySelector('#menu-backdrop');
 let token = null;
 let editingMachineId = null;
+let editingLabelsFor = null;
+let editorSignals = [];
 let cachedMachines = [];
 let lastItems = [];
 // Hourly totals only change once per hour, so they are fetched on demand instead of
@@ -21,8 +23,11 @@ let lastItems = [];
 const hourlyRows = new Map();
 const hourlyOpen = new Set();
 const signalsOpen = new Set();
-let editingLabelsFor = null;
 const HOURLY_VISIBLE = 8;
+
+// Static <svg data-icon="..."> placeholders in index.html are filled from icons.js.
+// Templates rendered by this file call icon() directly.
+hydrateIcons();
 
 async function request(url, options = {}) {
   const headers = {...(options.headers || {})};
@@ -45,11 +50,25 @@ function stateOf(item) {
   return item.value ? 'ok' : 'bad';
 }
 
-function statusBlock(item, icon) {
+function stateIcon(state) {
+  if (state === 'ok') return 'circle-check';
+  if (state === 'bad') return 'circle-x';
+  return 'circle-help';
+}
+
+function signalIcon(item) {
+  if (item.kind === 'fault') return stateOf(item) === 'bad' ? 'triangle-alert' : 'shield-check';
+  if (item.kind === 'auto') return 'power';
+  if (item.kind === 'run') return 'play';
+  if (item.kind === 'counter') return 'gauge';
+  return 'tag';
+}
+
+function statusBlock(item) {
   if (!item) return '';
   const state = stateOf(item);
   const text = state === 'unknown' ? 'Sem leitura' : item.value ? 'Ativo' : 'Parado';
-  return `<div class="state ${state}"><span class="state-icon">${icon}</span><div><strong>${text}</strong><small>${esc(item.label)} <em class="address">${esc(item.address)}</em></small></div></div>`;
+  return `<div class="state ${state}"><span class="state-icon">${icon(signalIcon(item))}</span><div><strong>${text}</strong><small>${esc(item.label)} <em class="address">${esc(item.address)}</em></small></div></div>`;
 }
 
 function signalsOfKind(status, kind) {
@@ -84,7 +103,7 @@ function hourlySection(machine) {
     }
   }
   const action = open ? 'Ocultar' : 'Ver';
-  return `<div class="hourly"><button type="button" class="hourly-toggle" data-hourly-id="${machine.id}" aria-expanded="${open}">${action} contagens por hora</button>${body}</div>`;
+  return `<div class="hourly"><button type="button" class="hourly-toggle" data-hourly-id="${machine.id}" aria-expanded="${open}"><span class="toggle-label">${icon('clock')}${action} contagens por hora</span>${icon(open ? 'chevron-up' : 'chevron-down')}</button>${body}</div>`;
 }
 
 function signalsSection(machine, status) {
@@ -95,11 +114,11 @@ function signalsSection(machine, status) {
     body = '<ul class="signal-list">' + custom.map(function (item) {
       const state = stateOf(item);
       const text = state === 'unknown' ? '-' : item.value ? 'Ativo' : 'Parado';
-      return `<li class="signal-row"><span class="signal-address">${esc(item.address)}</span><span class="signal-name">${esc(item.label)}</span><span class="signal-state ${state}">${text}</span></li>`;
+      return `<li class="signal-row"><span class="signal-address">${esc(item.address)}</span><span class="signal-name">${esc(item.label)}</span><span class="signal-state ${state}">${icon(stateIcon(state))}${text}</span></li>`;
     }).join('') + '</ul>';
   }
   const action = open ? 'Ocultar' : 'Ver';
-  return `<div class="signals"><button type="button" class="signals-toggle" data-signals-id="${machine.id}" aria-expanded="${open}">${action} sinais (${custom.length})</button>${body}</div>`;
+  return `<div class="signals"><button type="button" class="signals-toggle" data-signals-id="${machine.id}" aria-expanded="${open}"><span class="toggle-label">${icon('list')}${action} sinais (${custom.length})</span>${icon(open ? 'chevron-up' : 'chevron-down')}</button>${body}</div>`;
 }
 
 function machineCard(machine, status) {
@@ -107,7 +126,8 @@ function machineCard(machine, status) {
   const counterLabel = counter
     ? `CONTADOR ${esc(counter.label)} <em class="address">${esc(counter.address)}</em>`
     : 'CONTADOR ATUAL';
-  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">DB${esc(machine.db_number)}</span><h3>${esc(machine.name)}</h3><p class="meta">${esc(machine.ip)}</p></div><span class="connection-pill ${status.connected ? 'online' : 'offline'}"><i></i>${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(firstOfKind(status, 'auto'), 'A')}${statusBlock(firstOfKind(status, 'run'), '>')}${statusBlock(firstOfKind(status, 'fault'), '+')}</div><div class="count"><span class="count-label">${counterLabel}</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado as ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${signalsSection(machine, status)}${hourlySection(machine)}</article>`;
+  const connection = status.connected ? 'online' : 'offline';
+  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">${icon('cpu')}DB${esc(machine.db_number)}</span><h3>${esc(machine.name)}</h3><p class="meta">${esc(machine.ip)}</p></div><span class="connection-pill ${connection}">${icon(connection === 'online' ? 'wifi' : 'wifi-off')}${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(firstOfKind(status, 'auto'))}${statusBlock(firstOfKind(status, 'run'))}${statusBlock(firstOfKind(status, 'fault'))}</div><div class="count"><span class="count-label">${icon('gauge')}${counterLabel}</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado às ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${signalsSection(machine, status)}${hourlySection(machine)}</article>`;
 }
 
 function renderGroups(items) {
@@ -126,9 +146,9 @@ function renderGroups(items) {
     const areaHtml = Object.keys(areas).map(function (area) {
       const cards = areas[area];
       const label = cards.length === 1 ? '1 maquina' : cards.length + ' maquinas';
-      return `<div class="area-group"><div class="area-heading"><span class="area-mark">/</span><h4>${esc(area)}</h4><span>${label}</span></div><div class="machine-grid">${cards.join('')}</div></div>`;
+      return `<div class="area-group"><div class="area-heading"><span class="area-mark">${icon('layers')}</span><h4>${esc(area)}</h4><span>${esc(label)}</span></div><div class="machine-grid">${cards.join('')}</div></div>`;
     }).join('');
-    return `<section class="plant-group"><div class="plant-heading"><span class="section-index">PLANTA</span><h3>${esc(plant)}</h3></div>${areaHtml}</section>`;
+    return `<section class="plant-group"><div class="plant-heading"><span class="section-index">PLANTA</span><h3>${icon('factory')}${esc(plant)}</h3></div>${areaHtml}</section>`;
   }).join('');
 }
 
@@ -142,7 +162,7 @@ async function refresh() {
   }));
   lastItems = items;
   renderCards();
-  refreshState.textContent = 'Atualizado as ' + new Date().toLocaleTimeString();
+  refreshState.innerHTML = icon('refresh-cw') + 'Atualizado às ' + new Date().toLocaleTimeString();
 }
 
 function renderCards() {
@@ -217,8 +237,8 @@ async function loadSettings() {
   if (!response.ok) return;
   const areas = await response.json();
   document.querySelector('#area-select').innerHTML = areas.length
-    ? areas.map(function (area) { return `<option value="${area.id}">${area.plant_name} / ${area.name}</option>`; }).join('')
-    : '<option value="">Crie uma area primeiro</option>';
+    ? areas.map(function (area) { return `<option value="${area.id}">${esc(area.plant_name)} / ${esc(area.name)}</option>`; }).join('')
+    : '<option value="">Crie uma área primeiro</option>';
   const byArea = cachedMachines.reduce(function (groups, machine) {
     if (!groups[machine.area_id]) groups[machine.area_id] = [];
     groups[machine.area_id].push(machine);
@@ -227,11 +247,11 @@ async function loadSettings() {
   document.querySelector('#area-list').innerHTML = areas.length
     ? areas.map(function (area) {
         const list = (byArea[area.id] || []).map(function (machine) {
-          return `<div class="machine-list-item"><span>${esc(machine.name)} - ${esc(machine.ip)} - DB${esc(machine.db_number)}</span><span class="machine-actions"><button type="button" class="labels-machine" data-machine-id="${machine.id}">Sinais</button><button type="button" class="edit-machine" data-machine-id="${machine.id}">Editar</button><button type="button" class="delete-machine danger" data-machine-id="${machine.id}">Excluir</button></span></div>`;
-        }).join('') || '<p class="form-hint">Nenhuma maquina nesta area.</p>';
-        return `<div class="area-item"><div class="list-item"><strong>${area.name}</strong><span>${area.plant_name}</span></div>${list}</div>`;
+          return `<div class="machine-list-item"><span>${esc(machine.name)} - ${esc(machine.ip)} - DB${esc(machine.db_number)}</span><span class="machine-actions"><button type="button" class="labels-machine with-icon" data-machine-id="${machine.id}">${icon('tag')}Sinais</button><button type="button" class="edit-machine with-icon secondary" data-machine-id="${machine.id}">${icon('pencil')}Editar</button><button type="button" class="delete-machine danger with-icon" data-machine-id="${machine.id}">${icon('trash-2')}Excluir</button></span></div>`;
+        }).join('') || '<p class="form-hint">Nenhuma máquina nesta área.</p>';
+        return `<div class="area-item"><div class="list-item"><strong>${esc(area.name)}</strong><span>${esc(area.plant_name)}</span></div>${list}</div>`;
       }).join('')
-    : '<p class="form-hint">Nenhuma area cadastrada.</p>';
+    : '<p class="form-hint">Nenhuma área cadastrada.</p>';
   document.querySelectorAll('.edit-machine').forEach(function (button) {
     button.onclick = function () { beginEdit(Number(button.dataset.machineId)); };
   });
@@ -253,9 +273,9 @@ function beginEdit(machineId) {
   document.querySelector('#machine-ip').value = machine.ip;
   document.querySelector('#machine-db').value = machine.db_number;
   document.querySelector('#machine-timezone').value = machine.timezone;
-  document.querySelector('#machine-form-eyebrow').textContent = 'EDITAR MAQUINA';
-  document.querySelector('#machine-form-title').textContent = 'Atualizar maquina';
-  document.querySelector('#machine-submit').textContent = 'Salvar alteracoes';
+  document.querySelector('#machine-form-eyebrow').textContent = 'EDITAR MÁQUINA';
+  document.querySelector('#machine-form-title').textContent = 'Atualizar máquina';
+  document.querySelector('#machine-submit-label').textContent = 'Salvar alterações';
   document.querySelector('#machine-cancel').hidden = false;
   machineForm.scrollIntoView({behavior: 'smooth', block: 'start'});
 }
@@ -265,17 +285,17 @@ function cancelEdit() {
   machineForm.reset();
   document.querySelector('#area-select').disabled = false;
   document.querySelector('#machine-timezone').value = 'America/Sao_Paulo';
-  document.querySelector('#machine-form-eyebrow').textContent = 'NOVA MAQUINA';
-  document.querySelector('#machine-form-title').textContent = 'Adicionar maquina';
-  document.querySelector('#machine-submit').textContent = 'Salvar maquina';
+  document.querySelector('#machine-form-eyebrow').textContent = 'NOVA MÁQUINA';
+  document.querySelector('#machine-form-title').textContent = 'Adicionar máquina';
+  document.querySelector('#machine-submit-label').textContent = 'Salvar máquina';
   document.querySelector('#machine-cancel').hidden = true;
 }
 
 async function deleteMachine(machineId) {
   const machine = cachedMachines.find(function (item) { return item.id === machineId; });
-  if (!machine || !confirm('Excluir a maquina "' + machine.name + '" e seu historico?')) return;
+  if (!machine || !confirm('Excluir a máquina "' + machine.name + '" e seu histórico?')) return;
   const response = await request('/api/config/machines/' + machineId, {method: 'DELETE'});
-  document.querySelector('#machine-message').textContent = response.ok ? 'Maquina excluida.' : (await response.json()).detail;
+  document.querySelector('#machine-message').textContent = response.ok ? 'Máquina excluída.' : (await response.json()).detail;
   if (response.ok) { cancelEdit(); await refresh(); loadSettings(); }
 }
 
@@ -292,7 +312,7 @@ document.querySelector('#machine-cancel').onclick = cancelEdit;
 document.querySelector('#setup-button').onclick = async function () {
   const password = document.querySelector('#setup-password').value;
   const response = await request('/api/setup/password', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: password})});
-  message.textContent = response.ok ? 'Senha criada. Faca login para continuar.' : (await response.json()).detail;
+  message.textContent = response.ok ? 'Senha criada. Faça login para continuar.' : (await response.json()).detail;
   if (response.ok) setupStatus();
 };
 document.querySelector('#login-button').onclick = async function () {
@@ -300,18 +320,18 @@ document.querySelector('#login-button').onclick = async function () {
   const response = await request('/api/auth/login', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: password})});
   if (response.ok) {
     token = (await response.json()).token;
-    sessionState.textContent = 'Logado - Configuracao autorizada';
+    sessionState.textContent = 'Logado - configuração autorizada';
     sessionState.classList.add('authenticated');
     dialog.close();
     if (!settingsPage.hidden) loadSettings();
   } else {
-    message.textContent = 'Senha invalida.';
+    message.textContent = 'Senha inválida.';
   }
 };
 document.querySelector('#area-form').onsubmit = async function (event) {
   event.preventDefault();
   const response = await request('/api/config/areas', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({plant_name: document.querySelector('#plant-name').value, name: document.querySelector('#area-name').value})});
-  document.querySelector('#area-message').textContent = response.ok ? 'Area salva.' : (await response.json()).detail;
+  document.querySelector('#area-message').textContent = response.ok ? 'Área salva.' : (await response.json()).detail;
   if (response.ok) { event.target.reset(); loadSettings(); }
 };
 machineForm.onsubmit = async function (event) {
@@ -324,18 +344,72 @@ machineForm.onsubmit = async function (event) {
   };
   const url = editingMachineId ? '/api/config/machines/' + editingMachineId : '/api/config/areas/' + document.querySelector('#area-select').value + '/machines';
   const response = await request(url, {method: editingMachineId ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
-  document.querySelector('#machine-message').textContent = response.ok ? 'Maquina salva.' : (await response.json()).detail;
+  document.querySelector('#machine-message').textContent = response.ok ? 'Máquina salva.' : (await response.json()).detail;
   if (response.ok) { cancelEdit(); await refresh(); loadSettings(); }
 };
 
-function signalField(signal) {
+function labelKey(value) {
+  // Mirrors fold_label() in app/plc.py: case and accents are not distinguishing.
+  return String(value === null || value === undefined ? '' : value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function labelInputs() {
+  return Array.from(document.querySelectorAll('.signal-input'));
+}
+
+// Fixed signals keep their contract label, so a new name that matches one of them
+// is a duplicate too.
+function duplicateLabels() {
+  const firstSeen = new Map();
+  const repeated = new Map();
+  function consider(value) {
+    const key = labelKey(value);
+    if (!key || repeated.has(key)) return;
+    if (firstSeen.has(key)) { repeated.set(key, firstSeen.get(key)); return; }
+    firstSeen.set(key, String(value).trim());
+  }
+  editorSignals.forEach(function (signal) {
+    if (signal.kind !== 'custom') consider(signal.label);
+  });
+  labelInputs().forEach(function (input) { consider(input.value); });
+  return repeated;
+}
+
+function reviewLabels() {
+  const repeated = duplicateLabels();
+  labelInputs().forEach(function (input) {
+    input.classList.toggle('duplicate', repeated.has(labelKey(input.value)));
+  });
+  const save = document.querySelector('#signals-save');
+  save.disabled = repeated.size > 0;
+  const target = document.querySelector('#signals-message');
+  target.classList.toggle('warning', repeated.size > 0);
+  if (repeated.size > 0) {
+    target.textContent = 'Cada sinal precisa de um nome próprio. Repetido: ' + Array.from(repeated.values()).join(', ');
+  } else {
+    const locked = editorSignals.filter(function (signal) { return signal.kind !== 'custom'; }).length;
+    target.textContent = `${locked} sinais fixos do contrato permanecem travados.`;
+  }
+  return repeated.size === 0;
+}
+
+function lockedSignalRow(signal) {
+  return `<div class="signal-field locked"><span>${esc(signal.address)}<em>${esc(signal.type)}</em></span>`
+    + `<span class="locked-label">${icon('lock')}${esc(signal.label)}</span></div>`;
+}
+
+function editableSignalRow(signal) {
   return `<label class="signal-field"><span>${esc(signal.address)}<em>${esc(signal.type)}</em></span>`
     + `<input class="signal-input" data-address="${esc(signal.address)}" maxlength="60" value="${esc(signal.label)}"></label>`;
 }
 
 async function openSignalLabels(machineId) {
   if (!token) {
-    message.textContent = 'Faca login para alterar configuracoes.';
+    message.textContent = 'Faça login para alterar configurações.';
     dialog.showModal();
     return;
   }
@@ -343,13 +417,18 @@ async function openSignalLabels(machineId) {
   if (!response.ok) return;
   const signals = await response.json();
   editingLabelsFor = machineId;
-  document.querySelector('#signals-editor').innerHTML = signals.map(signalField).join('');
-  document.querySelector('#signals-message').textContent = '';
+  editorSignals = signals;
+  document.querySelector('#signals-editor').innerHTML = signals.map(function (signal) {
+    return signal.kind === 'custom' ? editableSignalRow(signal) : lockedSignalRow(signal);
+  }).join('');
+  labelInputs().forEach(function (input) { input.oninput = reviewLabels; });
+  reviewLabels();
   document.querySelector('#signals-dialog').showModal();
 }
 
 async function saveSignalLabels() {
-  const payload = Array.from(document.querySelectorAll('.signal-input')).map(function (input) {
+  if (!reviewLabels()) return;
+  const payload = labelInputs().map(function (input) {
     return { address: input.dataset.address, label: input.value };
   });
   const response = await request('/api/config/machines/' + editingLabelsFor + '/signals', {
@@ -359,10 +438,11 @@ async function saveSignalLabels() {
   });
   const target = document.querySelector('#signals-message');
   if (response.ok) {
-    target.textContent = 'Rotulos salvos.';
+    target.textContent = 'Rótulos salvos.';
     await refresh();
   } else {
-    target.textContent = 'Falha ao salvar os rotulos.';
+    const body = await response.json().catch(function () { return {}; });
+    target.textContent = typeof body.detail === 'string' ? body.detail : 'Não foi possível salvar os rótulos.';
   }
 }
 

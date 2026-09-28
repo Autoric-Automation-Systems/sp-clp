@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+DEFAULT_PATH = "data/sp-clp.sqlite3"
+
 
 class Storage:
-    def __init__(self, path: str | Path = "data/sp-clp.sqlite3") -> None:
-        self.path = Path(path)
+    def __init__(self, path: str | Path | None = None) -> None:
+        # An explicit path wins, then SP_CLP_DB, then the installed default. The
+        # variable lets an operator point the app at another file and keeps the
+        # test suite away from the development database.
+        resolved = path or os.environ.get("SP_CLP_DB") or DEFAULT_PATH
+        self.path = Path(resolved)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.initialize()
 

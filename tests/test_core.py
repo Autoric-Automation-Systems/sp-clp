@@ -1,9 +1,20 @@
 import logging
+import re
 from datetime import datetime, timezone
 
 import pytest
 from app.models import MachineInput
-from app.plc import SIGNAL_LAYOUT, FakePLCClient, describe_error, parse_db
+from app.plc import (
+    EDITABLE_ADDRESSES,
+    LOCKED_ADDRESSES,
+    SIGNAL_LAYOUT,
+    FakePLCClient,
+    describe_error,
+    duplicate_labels,
+    effective_labels,
+    parse_db,
+    signal_label,
+)
 from app.security import hash_password, verify_password
 from app.storage import Storage
 from fastapi.testclient import TestClient
@@ -89,7 +100,8 @@ def test_machine_status_reports_every_address_with_labels(monkeypatch):
     assert [item.address for item in status.signals] == [spec.address for spec in SIGNAL_LAYOUT]
 
     by_address = {item.address: item for item in status.signals}
-    assert by_address["0.0"].label == "Automatico"
+    assert by_address["0.0"].label == "Automático"
+    assert by_address["0.2"].label == "Segurança"
     assert by_address["0.3"].label == "Portao de entrada"
     assert by_address["0.3"].type == "BOOL"
     assert by_address["0.3"].kind == "custom"
@@ -208,7 +220,7 @@ def test_dashboard_shell_references_existing_assets():
     client = TestClient(app)
     page = client.get("/")
     assert page.status_code == 200
-    for asset in ("/static/app.js", "/static/styles.css"):
+    for asset in ("/static/app.js", "/static/styles.css", "/static/icons.js"):
         assert asset in page.text, f"{asset} is not referenced by the dashboard page"
         assert client.get(asset).status_code == 200, f"{asset} is not served"
 
@@ -298,13 +310,55 @@ def test_machine_timezone_is_validated_before_saving():
     assert machine.timezone == "America/Sao_Paulo"
 
 
-def test_signal_labels_can_repeat_without_losing_a_signal():
+def test_signal_labels_are_keyed_by_address():
     area_id = app_storage.add_area("Test Plant", "Labels Area")
     machine_id = app_storage.add_machine(area_id, "Labels", "fake", 53, "UTC")
-    app_storage.set_signal_labels(machine_id, {"0.3": "Portao", "0.4": "Portao"})
-    labels = app_storage.signal_labels(machine_id)
-    assert labels == {"0.3": "Portao", "0.4": "Portao"}
+    app_storage.set_signal_labels(machine_id, {"0.3": "Portao de entrada", "0.4": "Portao de saida"})
+    assert app_storage.signal_labels(machine_id) == {
+        "0.3": "Portao de entrada",
+        "0.4": "Portao de saida",
+    }
     app_storage.delete_machine(machine_id)
+
+
+def test_standard_signals_use_the_contract_labels():
+    labels = effective_labels()
+    assert labels["0.0"] == "Automático"
+    assert labels["0.1"] == "Produção"
+    assert labels["0.2"] == "Segurança"
+    assert labels["2.0"] == "Contador"
+    assert labels["0.3"] == "Sinal 0.3"
+
+
+def test_standard_signals_ignore_stored_overrides():
+    # A row left behind by an older version must never rename a fixed signal.
+    fault, auto, counter = SIGNAL_LAYOUT[2], SIGNAL_LAYOUT[0], SIGNAL_LAYOUT[-1]
+    assert signal_label(fault, {"0.2": "Saude"}) == "Segurança"
+    assert signal_label(auto, {"0.0": "Outro nome"}) == "Automático"
+    assert signal_label(counter, {"2.0": "Pecas"}) == "Contador"
+
+
+def test_only_free_form_signals_are_editable():
+    assert LOCKED_ADDRESSES == {"0.0", "0.1", "0.2", "2.0"}
+    assert EDITABLE_ADDRESSES == {
+        "0.3", "0.4", "0.5", "0.6", "0.7",
+        "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7",
+    }
+    assert EDITABLE_ADDRESSES | LOCKED_ADDRESSES == {spec.address for spec in SIGNAL_LAYOUT}
+
+
+def test_duplicate_labels_are_detected():
+    assert duplicate_labels({"0.3": "Portao", "0.4": "Portao"}) == ["Portao"]
+    # Case differences would be indistinguishable on the dashboard.
+    assert duplicate_labels({"0.3": "portao", "0.4": "Portao"}) == ["portao"]
+    assert duplicate_labels({"0.3": "Portao", "0.4": "portao"}) == ["Portao"]
+    # A free signal may not steal the name of a fixed one, accents included.
+    # The reported spelling is whichever of the two labels was seen first.
+    assert duplicate_labels({"0.3": "Contador"}) == ["Contador"]
+    assert duplicate_labels({"0.3": "SEGURANCA"}) == ["Segurança"]
+    assert duplicate_labels({"0.3": "CONtador"}) == ["CONtador"]
+    assert duplicate_labels({"0.3": "Portao de entrada", "0.4": "Portao de saida"}) == []
+    assert duplicate_labels() == []
 
 
 def test_clearing_a_signal_label_restores_the_default():
@@ -400,3 +454,113 @@ def test_signal_labels_for_unknown_machine_are_rejected():
         assert response.status_code == 404
     finally:
         sessions.discard(token)
+
+
+def _admin_client(token: str) -> TestClient:
+    from app.main import sessions
+
+    sessions.add(token)
+    return TestClient(app)
+
+
+def _temp_machine(name: str = "Signals") -> int:
+    area_id = app_storage.add_area("Test Plant", "Signals Area")
+    return app_storage.add_machine(area_id, name, "fake", 53, "UTC")
+
+
+def test_locked_signals_cannot_be_renamed_through_the_api():
+    from app.main import describe_machine_signals, sessions
+
+    client = _admin_client("test-token-locked")
+    machine_id = _temp_machine()
+    headers = {"Authorization": "Bearer test-token-locked"}
+    try:
+        response = client.put(
+            f"/api/config/machines/{machine_id}/signals",
+            headers=headers,
+            json=[{"address": "0.2", "label": "Saude"}],
+        )
+        assert response.status_code == 422
+        assert "0.2" in response.json()["detail"]
+        assert app_storage.signal_labels(machine_id) == {}
+        labels = {item.address: item.label for item in describe_machine_signals(machine_id)}
+        assert labels["0.2"] == "Segurança"
+    finally:
+        sessions.discard("test-token-locked")
+        app_storage.delete_machine(machine_id)
+
+
+def test_duplicate_signal_labels_are_rejected_through_the_api():
+    from app.main import sessions
+
+    client = _admin_client("test-token-duplicates")
+    machine_id = _temp_machine()
+    headers = {"Authorization": "Bearer test-token-duplicates"}
+    try:
+        response = client.put(
+            f"/api/config/machines/{machine_id}/signals",
+            headers=headers,
+            json=[
+                {"address": "0.3", "label": "Portao de entrada"},
+                {"address": "0.4", "label": "portao de ENTRADA"},
+            ],
+        )
+        assert response.status_code == 422
+        assert "Portao de entrada" in response.json()["detail"]
+        # Nothing is persisted when the payload is rejected.
+        assert app_storage.signal_labels(machine_id) == {}
+
+        response = client.put(
+            f"/api/config/machines/{machine_id}/signals",
+            headers=headers,
+            json=[
+                {"address": "0.3", "label": "Portao de entrada"},
+                {"address": "0.4", "label": "Portao de saida"},
+            ],
+        )
+        assert response.status_code == 200
+        assert app_storage.signal_labels(machine_id) == {
+            "0.3": "Portao de entrada",
+            "0.4": "Portao de saida",
+        }
+
+        # A free signal may not adopt the name of a fixed one either.
+        response = client.put(
+            f"/api/config/machines/{machine_id}/signals",
+            headers=headers,
+            json=[{"address": "0.3", "label": "Contador"}],
+        )
+        assert response.status_code == 422
+        assert app_storage.signal_labels(machine_id) == {
+            "0.3": "Portao de entrada",
+            "0.4": "Portao de saida",
+        }
+    finally:
+        sessions.discard("test-token-duplicates")
+        app_storage.delete_machine(machine_id)
+
+
+def test_dashboard_icons_are_vendored_and_used():
+    client = TestClient(app)
+    icons = client.get("/static/icons.js")
+    assert icons.status_code == 200, "the vendored icon module is not served"
+    assert "/static/icons.js" in client.get("/").text
+
+    defined = set(re.findall(r'^\s{2}"([a-z0-9-]+)":', icons.text, re.MULTILINE))
+    assert "circle-check" in defined and "lock" in defined
+
+    used: set[str] = set()
+    for source in (client.get("/static/app.js").text, client.get("/").text):
+        used |= set(re.findall(r"icon\('([a-z0-9-]+)'", source))
+        used |= set(re.findall(r'data-icon="([a-z0-9-]+)"', source))
+
+    assert used, "the dashboard does not reference any icon"
+    assert used <= defined, f"icons used but not generated: {sorted(used - defined)}"
+
+
+def test_icon_module_loads_before_the_dashboard_script():
+    page = TestClient(app).get("/")
+    assert page.status_code == 200
+    # Placeholders are hydrated by icons.js, which therefore has to load first.
+    assert 'data-icon="layout-dashboard"' in page.text
+    assert page.text.index("/static/icons.js") < page.text.index("/static/app.js")
