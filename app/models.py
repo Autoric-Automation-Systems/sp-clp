@@ -86,5 +86,6 @@ class MachineStatus(BaseModel):
     auto: bool | None
     run: bool | None
     fault: bool | None
+    safety: bool | None
     count: int | None
     signals: list[SignalValue]

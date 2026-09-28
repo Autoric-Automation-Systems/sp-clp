@@ -176,7 +176,8 @@ def machine_status(machine_id: int) -> MachineStatus:
         return MachineStatus(
             machine_id=machine_id, connected=True, stale=False,
             timestamp=reading.timestamp.isoformat(),
-            auto=bits["0.0"], run=bits["0.1"], fault=bits["0.2"], count=reading.count,
+            auto=bits["0.0"], run=bits["0.1"], fault=bits["0.2"], safety=bits["0.3"],
+            count=reading.count,
             signals=build_signals(labels, bits),
         )
     except (ConnectionError, OSError, RuntimeError, ValueError, ImportError) as error:
@@ -184,7 +185,7 @@ def machine_status(machine_id: int) -> MachineStatus:
         logger.debug("Maquina %s (%s) indisponivel: %s", machine_id, machine["ip"], describe_error(error))
         return MachineStatus(
             machine_id=machine_id, connected=False, stale=True, timestamp=None,
-            auto=None, run=None, fault=None, count=None,
+            auto=None, run=None, fault=None, safety=None, count=None,
             signals=build_signals(labels, None),
         )
 

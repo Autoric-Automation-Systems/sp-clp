@@ -85,29 +85,32 @@ def test_machine_status_reports_every_address_with_labels(monkeypatch):
             bits = {spec.address: False for spec in SIGNAL_LAYOUT}
             bits["0.0"] = True
             bits["0.2"] = True
+            bits["0.3"] = True
             bits["2.0"] = True
             return PLCReading(timestamp=datetime.now(timezone.utc), bits=bits, count=7)
 
     monkeypatch.setattr("app.main.client_for", lambda machine: FakeClient())
     area_id = app_storage.add_area("Test Plant", "Status Area")
     machine_id = app_storage.add_machine(area_id, "Status Machine", "fake", 53, "UTC")
-    app_storage.set_signal_labels(machine_id, {"0.3": "Portao de entrada"})
+    app_storage.set_signal_labels(machine_id, {"0.4": "Portao de entrada"})
     status = machine_status(machine_id)
 
     assert status.connected is True
-    assert status.auto is True and status.run is False and status.fault is True
+    assert status.auto is True and status.run is False
+    assert status.fault is True and status.safety is True
     assert status.count == 7
     assert [item.address for item in status.signals] == [spec.address for spec in SIGNAL_LAYOUT]
 
     by_address = {item.address: item for item in status.signals}
     assert by_address["0.0"].label == "Automático"
-    assert by_address["0.2"].label == "Segurança"
-    assert by_address["0.3"].label == "Portao de entrada"
-    assert by_address["0.3"].type == "BOOL"
-    assert by_address["0.3"].kind == "custom"
-    assert by_address["0.3"].value is False
-    # Only the three status bits are read only in the dashboard editor.
-    assert [item.address for item in status.signals if not item.editable] == ["0.0", "0.1", "0.2"]
+    assert by_address["0.2"].label == "Falha"
+    assert by_address["0.3"].label == "Segurança"
+    assert by_address["0.4"].label == "Portao de entrada"
+    assert by_address["0.4"].type == "BOOL"
+    assert by_address["0.4"].kind == "custom"
+    assert by_address["0.4"].value is False
+    # Only the four status bits are read only in the dashboard editor.
+    assert [item.address for item in status.signals if not item.editable] == ["0.0", "0.1", "0.2", "0.3"]
     app_storage.delete_machine(machine_id)
 
 
@@ -315,10 +318,10 @@ def test_machine_timezone_is_validated_before_saving():
 def test_signal_labels_are_keyed_by_address():
     area_id = app_storage.add_area("Test Plant", "Labels Area")
     machine_id = app_storage.add_machine(area_id, "Labels", "fake", 53, "UTC")
-    app_storage.set_signal_labels(machine_id, {"0.3": "Portao de entrada", "0.4": "Portao de saida"})
+    app_storage.set_signal_labels(machine_id, {"0.4": "Portao de entrada", "0.5": "Portao de saida"})
     assert app_storage.signal_labels(machine_id) == {
-        "0.3": "Portao de entrada",
-        "0.4": "Portao de saida",
+        "0.4": "Portao de entrada",
+        "0.5": "Portao de saida",
     }
     app_storage.delete_machine(machine_id)
 
@@ -327,17 +330,31 @@ def test_standard_signals_use_the_contract_labels():
     labels = effective_labels()
     assert labels["0.0"] == "Automático"
     assert labels["0.1"] == "Produção"
-    assert labels["0.2"] == "Segurança"
+    assert labels["0.2"] == "Falha"
+    assert labels["0.3"] == "Segurança"
     assert labels["2.0"] == "Contador"
-    assert labels["0.3"] == "Sinal 0.3"
+    assert labels["0.4"] == "Sinal 0.4"
+
+
+def test_the_contract_has_four_status_bits():
+    from app.plc import LOCKED_KINDS
+
+    status_bits = [spec for spec in SIGNAL_LAYOUT if spec.kind in LOCKED_KINDS]
+    assert [(spec.address, spec.kind, spec.default_label) for spec in status_bits] == [
+        ("0.0", "auto", "Automático"),
+        ("0.1", "run", "Produção"),
+        ("0.2", "fault", "Falha"),
+        ("0.3", "safety", "Segurança"),
+    ]
 
 
 def test_locked_signals_ignore_stored_overrides():
-    # A row left behind by an older version must never rename AUTO, RUN or FAULT.
-    auto, run, fault = SIGNAL_LAYOUT[0], SIGNAL_LAYOUT[1], SIGNAL_LAYOUT[2]
+    # A row left behind by an older version must never rename a status bit.
+    auto, run, fault, safety = SIGNAL_LAYOUT[0], SIGNAL_LAYOUT[1], SIGNAL_LAYOUT[2], SIGNAL_LAYOUT[3]
     assert signal_label(auto, {"0.0": "Outro nome"}) == "Automático"
     assert signal_label(run, {"0.1": "Outro nome"}) == "Produção"
-    assert signal_label(fault, {"0.2": "Saude"}) == "Segurança"
+    assert signal_label(fault, {"0.2": "Outro nome"}) == "Falha"
+    assert signal_label(safety, {"0.3": "Saude"}) == "Segurança"
 
 
 def test_the_counter_label_is_editable():
@@ -347,9 +364,9 @@ def test_the_counter_label_is_editable():
 
 
 def test_only_the_status_bits_are_locked():
-    assert LOCKED_ADDRESSES == {"0.0", "0.1", "0.2"}
+    assert LOCKED_ADDRESSES == {"0.0", "0.1", "0.2", "0.3"}
     assert EDITABLE_ADDRESSES == {
-        "0.3", "0.4", "0.5", "0.6", "0.7",
+        "0.4", "0.5", "0.6", "0.7",
         "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7",
         "2.0",
     }
@@ -357,24 +374,24 @@ def test_only_the_status_bits_are_locked():
 
 
 def test_duplicate_labels_are_detected():
-    assert duplicate_labels({"0.3": "Portao", "0.4": "Portao"}) == ["Portao"]
+    assert duplicate_labels({"0.4": "Portao", "0.5": "Portao"}) == ["Portao"]
     # Case differences would be indistinguishable on the dashboard.
-    assert duplicate_labels({"0.3": "portao", "0.4": "Portao"}) == ["portao"]
-    assert duplicate_labels({"0.3": "Portao", "0.4": "portao"}) == ["Portao"]
+    assert duplicate_labels({"0.4": "portao", "0.5": "Portao"}) == ["portao"]
+    assert duplicate_labels({"0.4": "Portao", "0.5": "portao"}) == ["Portao"]
     # A free signal may not steal the name of a fixed one, accents included.
     # The reported spelling is whichever of the two labels was seen first.
-    assert duplicate_labels({"0.3": "Contador"}) == ["Contador"]
-    assert duplicate_labels({"0.3": "SEGURANCA"}) == ["Segurança"]
-    assert duplicate_labels({"0.3": "CONtador"}) == ["CONtador"]
-    assert duplicate_labels({"0.3": "Portao de entrada", "0.4": "Portao de saida"}) == []
+    assert duplicate_labels({"0.4": "Contador"}) == ["Contador"]
+    assert duplicate_labels({"0.4": "SEGURANCA"}) == ["Segurança"]
+    assert duplicate_labels({"0.4": "CONtador"}) == ["CONtador"]
+    assert duplicate_labels({"0.4": "Portao de entrada", "0.5": "Portao de saida"}) == []
     assert duplicate_labels() == []
 
 
 def test_clearing_a_signal_label_restores_the_default():
     area_id = app_storage.add_area("Test Plant", "Labels Area")
     machine_id = app_storage.add_machine(area_id, "Labels", "fake", 53, "UTC")
-    app_storage.set_signal_labels(machine_id, {"0.3": "Portao"})
-    app_storage.set_signal_labels(machine_id, {"0.3": ""})
+    app_storage.set_signal_labels(machine_id, {"0.4": "Portao"})
+    app_storage.set_signal_labels(machine_id, {"0.4": ""})
     assert app_storage.signal_labels(machine_id) == {}
     app_storage.delete_machine(machine_id)
 
@@ -385,15 +402,15 @@ def test_signal_label_rejects_unknown_address_and_trims_whitespace():
     with pytest.raises(ValidationError):
         SignalLabelInput(address="3.0", label="Fora do contrato")
     with pytest.raises(ValidationError):
-        SignalLabelInput(address="0.3", label="Duas\nlinhas")
-    assert SignalLabelInput(address="0.3", label="  Portao  ").label == "Portao"
-    assert SignalLabelInput(address="0.3", label="").label == ""
+        SignalLabelInput(address="0.4", label="Duas\nlinhas")
+    assert SignalLabelInput(address="0.4", label="  Portao  ").label == "Portao"
+    assert SignalLabelInput(address="0.4", label="").label == ""
 
 
 def test_machine_delete_removes_signal_labels():
     area_id = app_storage.add_area("Test Plant", "Labels Area")
     machine_id = app_storage.add_machine(area_id, "Labels", "fake", 53, "UTC")
-    app_storage.set_signal_labels(machine_id, {"0.3": "Portao"})
+    app_storage.set_signal_labels(machine_id, {"0.4": "Portao"})
     app_storage.delete_machine(machine_id)
     assert app_storage.signal_labels(machine_id) == {}
 
@@ -424,14 +441,14 @@ def test_signal_labels_round_trip_through_the_api():
         response = client.put(
             f"/api/config/machines/{machine_id}/signals",
             headers=headers,
-            json=[{"address": "0.3", "label": "Portao de entrada"}],
+            json=[{"address": "0.4", "label": "Portao de entrada"}],
         )
         assert response.status_code == 200
         after = {item["address"]: item for item in response.json()}
-        assert after["0.3"]["label"] == "Portao de entrada"
-        assert after["0.3"]["type"] == "BOOL"
+        assert after["0.4"]["label"] == "Portao de entrada"
+        assert after["0.4"]["type"] == "BOOL"
         assert after["0.0"]["label"] == SIGNAL_LAYOUT[0].default_label
-        assert app_storage.signal_labels(machine_id) == {"0.3": "Portao de entrada"}
+        assert app_storage.signal_labels(machine_id) == {"0.4": "Portao de entrada"}
 
         response = client.put(
             f"/api/config/machines/{machine_id}/signals",
@@ -487,13 +504,14 @@ def test_locked_signals_cannot_be_renamed_through_the_api():
         response = client.put(
             f"/api/config/machines/{machine_id}/signals",
             headers=headers,
-            json=[{"address": "0.2", "label": "Saude"}],
+            json=[{"address": "0.3", "label": "Seguranca do portao"}],
         )
         assert response.status_code == 422
-        assert "0.2" in response.json()["detail"]
+        assert "0.3" in response.json()["detail"]
         assert app_storage.signal_labels(machine_id) == {}
         labels = {item.address: item.label for item in describe_machine_signals(machine_id)}
-        assert labels["0.2"] == "Segurança"
+        assert labels["0.2"] == "Falha"
+        assert labels["0.3"] == "Segurança"
     finally:
         sessions.discard("test-token-locked")
         app_storage.delete_machine(machine_id)
@@ -510,8 +528,8 @@ def test_duplicate_signal_labels_are_rejected_through_the_api():
             f"/api/config/machines/{machine_id}/signals",
             headers=headers,
             json=[
-                {"address": "0.3", "label": "Portao de entrada"},
-                {"address": "0.4", "label": "portao de ENTRADA"},
+                {"address": "0.4", "label": "Portao de entrada"},
+                {"address": "0.5", "label": "portao de ENTRADA"},
             ],
         )
         assert response.status_code == 422
@@ -523,26 +541,26 @@ def test_duplicate_signal_labels_are_rejected_through_the_api():
             f"/api/config/machines/{machine_id}/signals",
             headers=headers,
             json=[
-                {"address": "0.3", "label": "Portao de entrada"},
-                {"address": "0.4", "label": "Portao de saida"},
+                {"address": "0.4", "label": "Portao de entrada"},
+                {"address": "0.5", "label": "Portao de saida"},
             ],
         )
         assert response.status_code == 200
         assert app_storage.signal_labels(machine_id) == {
-            "0.3": "Portao de entrada",
-            "0.4": "Portao de saida",
+            "0.4": "Portao de entrada",
+            "0.5": "Portao de saida",
         }
 
         # A free signal may not adopt the name of a fixed one either.
         response = client.put(
             f"/api/config/machines/{machine_id}/signals",
             headers=headers,
-            json=[{"address": "0.3", "label": "Contador"}],
+            json=[{"address": "0.4", "label": "Contador"}],
         )
         assert response.status_code == 422
         assert app_storage.signal_labels(machine_id) == {
-            "0.3": "Portao de entrada",
-            "0.4": "Portao de saida",
+            "0.4": "Portao de entrada",
+            "0.5": "Portao de saida",
         }
     finally:
         sessions.discard("test-token-duplicates")

@@ -24,22 +24,23 @@ class SignalSpec:
 
 
 # Standard contract: BOOL signals occupy 0.0 through 1.7, COUNTER is a BOOL at 2.0.
-# 0.0/0.1/0.2 are the standard AUTO/RUN/SAFETY status bits used by the dashboard
-# logic. Their labels are part of the contract and cannot be renamed by the user.
+# 0.0-0.3 are the four standard status bits (AUTO, RUN, FAULT, SAFETY) that drive
+# the dashboard logic. Their labels are part of the contract and cannot be renamed.
 SIGNAL_LAYOUT: tuple[SignalSpec, ...] = (
     SignalSpec("0.0", "auto", "Automático"),
     SignalSpec("0.1", "run", "Produção"),
-    SignalSpec("0.2", "fault", "Segurança"),
-    *(SignalSpec(f"0.{bit}", "custom", f"Sinal 0.{bit}") for bit in range(3, 8)),
+    SignalSpec("0.2", "fault", "Falha"),
+    SignalSpec("0.3", "safety", "Segurança"),
+    *(SignalSpec(f"0.{bit}", "custom", f"Sinal 0.{bit}") for bit in range(4, 8)),
     *(SignalSpec(f"1.{bit}", "custom", f"Sinal 1.{bit}") for bit in range(8)),
     SignalSpec("2.0", "counter", "Contador"),
 )
 
 SIGNAL_ADDRESSES = [spec.address for spec in SIGNAL_LAYOUT]
 KNOWN_ADDRESSES = frozenset(SIGNAL_ADDRESSES)
-# 0.0/0.1/0.2 drive the dashboard status logic, so their labels belong to the
-# contract. Every other signal, the counter included, accepts a user label.
-LOCKED_KINDS = frozenset({"auto", "run", "fault"})
+# The four status bits drive the dashboard status blocks, so their labels belong
+# to the contract. Every other signal, the counter included, accepts a user label.
+LOCKED_KINDS = frozenset({"auto", "run", "fault", "safety"})
 EDITABLE_ADDRESSES = frozenset(
     spec.address for spec in SIGNAL_LAYOUT if spec.kind not in LOCKED_KINDS
 )
@@ -77,7 +78,7 @@ def bit_value(data: bytes, address: str) -> bool:
 def signal_label(spec: SignalSpec, labels: dict[str, str] | None = None) -> str:
     """Return the display label for one signal.
 
-    AUTO, RUN and FAULT keep the contract label, so a stored override for them
+    The four status bits keep the contract label, so a stored override for them
     (for example a row left behind by an older version) is ignored.
     """
     if spec.address not in EDITABLE_ADDRESSES:

@@ -7,7 +7,6 @@ const sessionState = document.querySelector('#session-state');
 const dashboardPage = document.querySelector('#dashboard-page');
 const plantPage = document.querySelector('#plant-page');
 const plantTitle = document.querySelector('#plant-title');
-const plantAddress = document.querySelector('#plant-address');
 const plantMachines = document.querySelector('#plant-machines');
 const plantEmpty = document.querySelector('#plant-empty');
 const settingsPage = document.querySelector('#settings-page');
@@ -63,7 +62,8 @@ function stateIcon(state) {
 }
 
 function signalIcon(item) {
-  if (item.kind === 'fault') return stateOf(item) === 'bad' ? 'triangle-alert' : 'shield-check';
+  if (item.kind === 'fault') return 'triangle-alert';
+  if (item.kind === 'safety') return 'shield-check';
   if (item.kind === 'auto') return 'power';
   if (item.kind === 'run') return 'play';
   if (item.kind === 'counter') return 'gauge';
@@ -131,7 +131,7 @@ function machineCard(machine, status) {
   const counter = firstOfKind(status, 'counter');
   const counterLabel = counter ? `CONTADOR ${esc(counter.label)}` : 'CONTADOR ATUAL';
   const connection = status.connected ? 'online' : 'offline';
-  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">${icon('cpu')}DB${esc(machine.db_number)}</span><h3>${esc(machine.name)}</h3><p class="meta">${esc(machine.ip)}</p></div><span class="connection-pill ${connection}">${icon(connection === 'online' ? 'wifi' : 'wifi-off')}${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(firstOfKind(status, 'auto'))}${statusBlock(firstOfKind(status, 'run'))}${statusBlock(firstOfKind(status, 'fault'))}</div><div class="count"><span class="count-label">${icon('gauge')}${counterLabel}</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado às ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${signalsSection(machine, status)}${hourlySection(machine)}</article>`;
+  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">${icon('cpu')}DB${esc(machine.db_number)}</span><h3>${esc(machine.name)}</h3><p class="meta">${esc(machine.ip)}</p></div><span class="connection-pill ${connection}">${icon(connection === 'online' ? 'wifi' : 'wifi-off')}${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(firstOfKind(status, 'auto'))}${statusBlock(firstOfKind(status, 'run'))}${statusBlock(firstOfKind(status, 'fault'))}${statusBlock(firstOfKind(status, 'safety'))}</div><div class="count"><span class="count-label">${icon('gauge')}${counterLabel}</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado às ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${signalsSection(machine, status)}${hourlySection(machine)}</article>`;
 }
 
 function renderAreas(items) {
@@ -205,7 +205,6 @@ function renderPlantPage(plant) {
     return String(entry[0].plant_slug || '').toLowerCase() === plant.slug.toLowerCase();
   });
   plantTitle.textContent = plant.name;
-  plantAddress.textContent = plant.slug ? 'Endereço: /' + plant.slug : '';
   plantMachines.innerHTML = renderAreas(items);
   plantEmpty.hidden = items.length > 0;
   bindToggles();
