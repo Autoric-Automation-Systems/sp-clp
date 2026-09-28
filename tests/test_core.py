@@ -3,6 +3,7 @@ import re
 from datetime import datetime, timezone
 
 import pytest
+from app.branding import remove_logos
 from app.models import MachineInput
 from app.plc import (
     EDITABLE_ADDRESSES,
@@ -696,6 +697,118 @@ def test_bit_address_is_only_shown_in_the_signal_list():
     assert 'em class="address"' not in script
     # The expandable signal list keeps it, because that is where it is useful.
     assert 'class="signal-address"' in script
+
+
+# A real 1x1 PNG, so the signature check can be exercised end to end.
+TINY_PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+def test_branding_defaults_to_the_shipped_identity():
+    response = TestClient(app).get("/api/branding")
+    assert response.status_code == 200
+    assert response.json() == {"company_name": "SP-CLP", "logo_url": None}
+    assert TestClient(app).get("/api/branding/logo").status_code == 404
+
+
+def test_branding_endpoints_require_authentication():
+    client = TestClient(app, raise_server_exceptions=False)
+    assert client.put("/api/config/branding", json={"company_name": "X"}).status_code == 401
+    assert client.post(
+        "/api/config/branding/logo", json={"filename": "l.png", "content": TINY_PNG}
+    ).status_code == 401
+    assert client.delete("/api/config/branding/logo").status_code == 401
+
+
+def test_company_name_and_logo_round_trip():
+    from app.branding import COMPANY_NAME_KEY, LOGO_EXT_KEY
+
+    client = _admin_client("test-token-branding")
+    headers = {"Authorization": "Bearer test-token-branding"}
+    try:
+        response = client.put(
+            "/api/config/branding", headers=headers, json={"company_name": "Autoric"}
+        )
+        assert response.status_code == 200
+        assert response.json()["company_name"] == "Autoric"
+        assert client.get("/api/branding").json()["company_name"] == "Autoric"
+
+        response = client.post(
+            "/api/config/branding/logo",
+            headers=headers,
+            json={"filename": "marca.png", "content": TINY_PNG},
+        )
+        assert response.status_code == 200
+        assert response.json()["logo_url"] == "/api/branding/logo"
+
+        served = client.get("/api/branding/logo")
+        assert served.status_code == 200
+        assert served.headers["content-type"] == "image/png"
+        assert served.content.startswith(b"\x89PNG")
+
+        assert client.delete("/api/config/branding/logo", headers=headers).status_code == 200
+        assert client.get("/api/branding").json()["logo_url"] is None
+        assert client.get("/api/branding/logo").status_code == 404
+    finally:
+        from app.main import sessions
+
+        sessions.discard("test-token-branding")
+        app_storage.set_setting(COMPANY_NAME_KEY, "SP-CLP")
+        # The logo file lives next to the test database; clear both the pointer
+        # and the file so later tests see the shipped default again.
+        app_storage.set_setting(LOGO_EXT_KEY, "")
+        remove_logos(app_storage.path.parent)
+
+
+def test_branding_logo_must_be_an_image():
+    import base64
+
+    client = _admin_client("test-token-branding-bad")
+    headers = {"Authorization": "Bearer test-token-branding-bad"}
+    try:
+        not_an_image = base64.b64encode(b"isto nao e uma imagem").decode()
+        response = client.post(
+            "/api/config/branding/logo",
+            headers=headers,
+            json={"filename": "marca.png", "content": not_an_image},
+        )
+        assert response.status_code == 422
+        assert "Formato não reconhecido" in response.json()["detail"]
+
+        # An SVG is a document that can run script in this origin, so it is refused
+        # even though it is a valid image.
+        svg = base64.b64encode(b'<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>').decode()
+        response = client.post(
+            "/api/config/branding/logo",
+            headers=headers,
+            json={"filename": "marca.svg", "content": svg},
+        )
+        assert response.status_code == 422
+
+        oversized = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 1_100_000).decode()
+        response = client.post(
+            "/api/config/branding/logo",
+            headers=headers,
+            json={"filename": "grande.png", "content": oversized},
+        )
+        assert response.status_code == 422
+        assert "limite" in response.json()["detail"]
+    finally:
+        from app.main import sessions
+
+        sessions.discard("test-token-branding-bad")
+
+
+def test_dashboard_header_carries_the_branding():
+    page = TestClient(app).get("/").text
+    assert 'id="brand-name"' in page
+    assert 'id="brand-logo"' in page
+    assert 'id="branding-form"' in page
+    assert 'id="company-logo"' in page
+    script = TestClient(app).get("/static/app.js").text
+    assert "loadBranding()" in script
+    assert "applyBranding" in script
 
 
 def _area_ids(plant_name: str) -> list[int]:

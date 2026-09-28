@@ -42,6 +42,17 @@ class PlantRenameInput(BaseModel):
     plant_name: str = Field(min_length=1, max_length=120)
 
 
+class BrandingInput(BaseModel):
+    company_name: str = Field(min_length=1, max_length=60)
+
+
+class LogoUpload(BaseModel):
+    # Base64 keeps the upload to JSON and avoids another runtime dependency just
+    # for multipart parsing. The size is really checked after decoding.
+    filename: str = Field(default="logo", max_length=200)
+    content: str = Field(min_length=1, max_length=2_000_000)
+
+
 class SignalDefinition(BaseModel):
     address: str
     label: str

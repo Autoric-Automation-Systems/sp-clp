@@ -35,6 +35,15 @@ Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O
 - O contador reinicia quando o CLP reinicia; qualquer redução do valor inicia nova linha de base e não produz valor negativo
 - Totais horários usam o fuso configurado para cada máquina
 
+## Identidade do cliente
+
+Em **Configurações → Identidade** o cliente define o **nome da empresa** e envia o **logotipo** que aparecem no cabeçalho e no título da aba. O logo fica em `data/logo.<ext>` (ao lado do banco) e é servido por `/api/branding/logo`.
+
+- Formatos aceitos: PNG, JPEG, GIF ou WEBP até 1000 KB
+- O formato é identificado pelos **bytes de assinatura**, não pelo nome do arquivo
+- **SVG não é aceito**: é um documento que pode executar script na mesma origem do painel
+- Sem logo configurado, o painel usa o ícone que acompanha o aplicativo
+
 ## Endereços
 
 O dashboard mostra um único card com todas as plantas e o status de cada máquina. Cada planta responde no seu próprio endereço, derivado do nome:
@@ -50,6 +59,7 @@ A página `Ajuda` traz a documentação de uso: acesso, cadastro, rótulos de si
 - `app/main.py`: API FastAPI e rotas do dashboard
 - `app/plc.py`: protocolo, parser, simulador e adaptador Snap7
 - `app/storage.py`: SQLite, amostras e totais horários
+- `app/branding.py`: nome da empresa e logotipo do cabeçalho
 - `app/slugs.py`: nome da planta convertido em endereço
 - `app/security.py`: hash de senha PBKDF2
 - `app/static/`: dashboard HTML/CSS/JavaScript

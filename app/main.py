@@ -8,10 +8,21 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .branding import (
+    COMPANY_NAME_KEY,
+    DEFAULT_COMPANY_NAME,
+    LOGO_EXT_KEY,
+    MEDIA_TYPES,
+    decode_logo,
+    logo_path,
+    remove_logos,
+)
 from .models import (
     AreaInput,
+    BrandingInput,
     HourlyCount,
     LoginRequest,
+    LogoUpload,
     MachineInput,
     MachineStatus,
     PlantRenameInput,
@@ -89,6 +100,66 @@ def named_page(page: str) -> Path:
     if page.casefold() not in allowed:
         raise HTTPException(status_code=404, detail="Pagina nao encontrada")
     return BASE_DIR / "static" / "index.html"
+
+
+def _branding_directory() -> Path:
+    return storage.path.parent
+
+
+def _logo_file() -> Path | None:
+    extension = storage.get_setting(LOGO_EXT_KEY)
+    if not extension:
+        return None
+    path = logo_path(_branding_directory(), extension)
+    return path if path.exists() else None
+
+
+def _branding_payload() -> dict[str, str | None]:
+    logo = _logo_file()
+    return {
+        "company_name": storage.get_setting(COMPANY_NAME_KEY) or DEFAULT_COMPANY_NAME,
+        "logo_url": "/api/branding/logo" if logo else None,
+    }
+
+
+@app.get("/api/branding")
+def get_branding() -> dict[str, str | None]:
+    """Public, because the header of every page shows the company identity."""
+    return _branding_payload()
+
+
+@app.get("/api/branding/logo")
+def get_branding_logo() -> FileResponse:
+    logo = _logo_file()
+    if logo is None:
+        raise HTTPException(status_code=404, detail="Nenhum logotipo configurado")
+    return FileResponse(logo, media_type=MEDIA_TYPES[logo.suffix.lstrip(".")])
+
+
+@app.put("/api/config/branding", dependencies=[Depends(require_admin)])
+def update_branding(payload: BrandingInput) -> dict[str, str | None]:
+    storage.set_setting(COMPANY_NAME_KEY, payload.company_name)
+    return _branding_payload()
+
+
+@app.post("/api/config/branding/logo", dependencies=[Depends(require_admin)])
+def upload_branding_logo(payload: LogoUpload) -> dict[str, str | None]:
+    try:
+        data, extension = decode_logo(payload.content)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    directory = _branding_directory()
+    remove_logos(directory)
+    logo_path(directory, extension).write_bytes(data)
+    storage.set_setting(LOGO_EXT_KEY, extension)
+    return _branding_payload()
+
+
+@app.delete("/api/config/branding/logo", dependencies=[Depends(require_admin)])
+def remove_branding_logo() -> dict[str, str | None]:
+    remove_logos(_branding_directory())
+    storage.set_setting(LOGO_EXT_KEY, "")
+    return _branding_payload()
 
 
 @app.get("/api/setup/status")

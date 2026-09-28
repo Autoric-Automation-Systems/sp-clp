@@ -359,6 +359,76 @@ function groupAreasByPlant(areas, machines) {
   }).join('');
 }
 
+function applyBranding(branding) {
+  const name = (branding && branding.company_name) || 'SP-CLP';
+  document.querySelector('#brand-name').textContent = name;
+  const image = document.querySelector('#brand-logo');
+  image.src = (branding && branding.logo_url) || '/static/assets/favicon_io/android-chrome-192x192.png';
+  image.alt = name;
+  document.title = name + ' | Monitoramento';
+}
+
+async function loadBranding() {
+  const response = await request('/api/branding');
+  if (response.ok) applyBranding(await response.json());
+}
+
+function fileToBase64(file) {
+  return new Promise(function (resolve, reject) {
+    const reader = new FileReader();
+    reader.onload = function () {
+      // "data:image/png;base64,AAAA" -> "AAAA"
+      resolve(String(reader.result).split(',')[1] || '');
+    };
+    reader.onerror = function () { reject(new Error('read failed')); };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function showBrandingMessage(response, okText) {
+  const target = document.querySelector('#branding-message');
+  if (response.ok) {
+    target.textContent = okText;
+    applyBranding(await response.json());
+    return true;
+  }
+  const body = await response.json().catch(function () { return {}; });
+  target.textContent = typeof body.detail === 'string' ? body.detail : 'Não foi possível salvar a identidade.';
+  return false;
+}
+
+document.querySelector('#branding-form').onsubmit = async function (event) {
+  event.preventDefault();
+  const name = await request('/api/config/branding', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({company_name: document.querySelector('#company-name').value}),
+  });
+  if (!(await showBrandingMessage(name, 'Identidade salva.'))) return;
+
+  const file = document.querySelector('#company-logo').files[0];
+  if (!file) return;
+  let content = '';
+  try {
+    content = await fileToBase64(file);
+  } catch (error) {
+    document.querySelector('#branding-message').textContent = 'Não foi possível ler o arquivo.';
+    return;
+  }
+  const logo = await request('/api/config/branding/logo', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({filename: file.name, content: content}),
+  });
+  await showBrandingMessage(logo, 'Identidade e logotipo salvos.');
+  if (logo.ok) document.querySelector('#company-logo').value = '';
+};
+
+document.querySelector('#branding-logo-remove').onclick = async function () {
+  const response = await request('/api/config/branding/logo', {method: 'DELETE'});
+  await showBrandingMessage(response, 'Logotipo removido.');
+};
+
 async function loadSettings() {
   if (!token) return;
   settingsLocked.hidden = true;
@@ -366,6 +436,11 @@ async function loadSettings() {
   const response = await request('/api/config/areas');
   if (!response.ok) return;
   cachedAreas = await response.json();
+  const branding = await request('/api/branding');
+  if (branding.ok) {
+    const info = await branding.json();
+    document.querySelector('#company-name').value = info.company_name || '';
+  }
   document.querySelector('#area-select').innerHTML = cachedAreas.length
     ? cachedAreas.map(function (area) { return `<option value="${area.id}">${esc(area.plant_name)} / ${esc(area.name)}</option>`; }).join('')
     : '<option value="">Crie uma área primeiro</option>';
@@ -688,5 +763,6 @@ document.addEventListener('click', function (event) {
 });
 
 applyRoute({settings: true});
+loadBranding();
 refresh();
 setInterval(refresh, 5000);
