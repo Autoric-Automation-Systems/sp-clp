@@ -66,7 +66,6 @@ ICONS = (
     "info",
     "inbox",
     "server",
-    "globe",
     "github",
     "instagram",
     "link",

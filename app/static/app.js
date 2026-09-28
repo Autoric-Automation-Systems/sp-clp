@@ -45,18 +45,14 @@ function esc(value) {
     .replace(/'/g, '&#39;');
 }
 
-function stateOf(item) {
-  // A null value means the PLC could not be read, which is not the same as a false bit.
-  if (!item || item.value === null || item.value === undefined) return 'unknown';
-  return item.value ? 'ok' : 'bad';
-}
-
 function stateIcon(state) {
   if (state === 'ok') return 'circle-check';
   if (state === 'bad') return 'circle-x';
   return 'circle-help';
 }
 
+// Each bit means something different, so the wording and the colour both follow
+// the meaning instead of the raw bit value.
 function signalIcon(item) {
   if (item.kind === 'fault') return 'triangle-alert';
   if (item.kind === 'safety') return 'shield-check';
@@ -66,14 +62,27 @@ function signalIcon(item) {
   return 'tag';
 }
 
-// Each fixed bit means something different, so the yes/no wording differs: for
-// FAULT and SAFETY a set bit is the healthy state, not the active one.
+// Index 0 is the bit cleared, index 1 is the bit set.
 const BIT_WORDS = {
   auto: ['Manual', 'Automático'],
   run: ['Parado', 'Produzindo'],
-  fault: ['Em falha', 'Normal'],
+  fault: ['Normal', 'Em falha'],
   safety: ['Pendente', 'Normal'],
 };
+
+// FAULT is the odd one out: the bit is set while the machine is in fault, so a
+// set bit is the bad state and a cleared bit is the healthy one.
+const INVERTED_BITS = new Set(['fault']);
+
+function isHealthy(item) {
+  return INVERTED_BITS.has(item.kind) ? !item.value : Boolean(item.value);
+}
+
+function stateOf(item) {
+  // A null value means the PLC could not be read, which is not the same as a false bit.
+  if (!item || item.value === null || item.value === undefined) return 'unknown';
+  return isHealthy(item) ? 'ok' : 'bad';
+}
 
 function stateText(item, state) {
   if (state === 'unknown') return 'Sem leitura';

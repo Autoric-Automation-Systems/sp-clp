@@ -886,11 +886,22 @@ def test_footer_keeps_the_product_mark():
 
 def test_footer_site_link_keeps_the_address_in_the_link():
     page = TestClient(app).get("/").text
+    assert 'class="authoric-link"' in page
     assert 'href="https://www.autoric.com.br"' in page
     assert 'title="Autoric: https://www.autoric.com.br"' in page
-    # The address lives in the link, instead of being printed beside the icon.
+    # The address lives in the link, instead of being printed beside the mark.
     assert ">www.autoric.com.br<" not in page
-    assert 'data-icon="globe"' in page
+    assert page.count('href="https://www.autoric.com.br"') == 1
+
+
+def test_fault_bit_is_set_while_the_machine_is_in_fault():
+    script = TestClient(app).get("/static/app.js").text
+    # FAULT is the opposite of the other fixed bits: 0 is normal, 1 is in fault.
+    assert "fault: ['Normal', 'Em falha']" in script
+    assert "new Set(['fault'])" in script
+    assert "isHealthy" in script
+    page = TestClient(app).get("/").text
+    assert "Em falha" in page and "quando o bit é 1" in page
 
 
 def test_status_words_follow_what_each_bit_means():

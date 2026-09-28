@@ -135,7 +135,8 @@ class FakePLCClient:
         if not self.connected:
             raise ConnectionError("Fake PLC disconnected")
         data = bytearray(8)
-        data[0] = 0b00000011
+        # AUTO and RUN set, SAFETY clear of pending, counter counting.
+        data[0] = 0b00001011
         data[2] = 0b00000001
         data[4:8] = self.count.to_bytes(4, "big", signed=True)
         self.count += 1

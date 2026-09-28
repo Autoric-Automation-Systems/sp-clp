@@ -28,6 +28,7 @@ Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O
 - Rack padrão: `0`
 - Slot padrão: `1`
 - Sinais fixos: `AUTO` (`0.0`), `RUN` (`0.1`), `FAULT` (`0.2`) e `SAFETY` (`0.3`). Fault e Safety são coisas diferentes: falha da máquina e cadeado de segurança. Nome e tipo são do contrato e **não podem ser alterados**.
+- Polaridade dos bits fixos: `AUTO` 1 = automático, 0 = manual; `RUN` 1 = produzindo, 0 = parado; `FAULT` 1 = **em falha**, 0 = normal; `SAFETY` 1 = normal, 0 = pendente
 - Sinais adicionais: posições fixas de `0.4` a `0.7` e de `1.0` a `1.7`; apenas o rótulo é editável
 - Cada sinal precisa de um rótulo próprio. A comparação ignora maiúsculas e acentos, e um sinal renomeável também não pode adotar o nome de um sinal fixo
 - `Counter`: `BOOL` em `DBX2.0`, com rótulo editável
