@@ -19,7 +19,7 @@ from .branding import (
     logo_path,
     remove_logos,
 )
-from .library import DOWNLOAD_URL, library_file
+from .libraries import available_files, lookup
 from .models import (
     AreaInput,
     BrandingInput,
@@ -184,30 +184,33 @@ def remove_branding_logo() -> dict[str, str | None]:
 
 @app.get("/api/library")
 def get_library() -> dict[str, object]:
-    """Public: the help page hands the PLC block to whoever opens the panel.
+    """Public: the help page hands the PLC blocks to whoever opens the panel.
 
-    The block is what declares the addresses the dashboard reads, so it is part of
-    using the product, not of administering it.
+    The blocks declare the addresses the dashboard reads, so they belong to using
+    the product, not to administering it.
     """
-    path = library_file()
-    if path is None:
-        return {"available": False, "filename": None, "size_bytes": None, "url": None}
     return {
-        "available": True,
-        "filename": path.name,
-        "size_bytes": path.stat().st_size,
-        "url": DOWNLOAD_URL,
+        "files": [
+            {
+                "family": item.family,
+                "label": item.label,
+                "filename": item.filename,
+                "size_bytes": item.size_bytes,
+                "url": item.url,
+            }
+            for item in available_files()
+        ]
     }
 
 
-@app.get(DOWNLOAD_URL)
-def download_library() -> FileResponse:
-    path = library_file()
-    if path is None:
-        raise HTTPException(status_code=404, detail="Biblioteca nao disponivel nesta instalacao")
+@app.get("/api/library/{family}/{filename}")
+def download_library(family: str, filename: str) -> FileResponse:
+    item = lookup(family, filename)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Biblioteca nao encontrada")
     # The name in the header is the file name, so the customer saves something it
-    # can recognise in the TIA Portal dialog.
-    return FileResponse(path, media_type="application/octet-stream", filename=path.name)
+    # can recognise in the PLC tool.
+    return FileResponse(item.path, media_type="application/octet-stream", filename=item.filename)
 
 
 @app.get("/api/access")

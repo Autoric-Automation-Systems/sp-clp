@@ -108,12 +108,23 @@ A página **Ajuda** do painel traz o mesmo conteúdo para o cliente.
 
 ## Biblioteca do CLP
 
-O bloco `FB_SP-CLP`, que declara o DB lido pelo painel, viaja junto com o aplicativo e é oferecido na página **Ajuda**, no tópico *9. Biblioteca*.
+O bloco `FB_SP-CLP`, que declara o DB lido pelo painel, viaja junto com o aplicativo e é oferecido na página **Ajuda**, no tópico *9. Biblioteca*. Ajuda é uma página pública, e a biblioteca é parte de usar o produto, não de administrá-lo.
 
-- Coloque o arquivo em `app/biblioteca/NOME.zal`. Ele entra no executável pelo `--add-data` de `scripts/build_windows.ps1`, então **trocar a biblioteca exige gerar o `.exe` de novo**
-- Só `*.zal` é anunciado. Com mais de um arquivo na pasta, o primeiro em ordem alfabética é o que sai, e o nome aparece ao lado do botão, para a escolha não ser silenciosa
-- A pasta não é pública: o arquivo só sai por `GET /api/library/download`, com `Content-Disposition: attachment`
-- `GET /api/library` diz se a instalação tem a biblioteca. Sem arquivo, a Ajuda avisa em vez de oferecer um link que falharia
+Um diretório por família de CLP, porque a instalação pode atender mais de uma marca:
+
+```
+app/library/
+    s7/FB_SP-CLP.zal17
+    mitsubishi/SP-CLP.gxw
+```
+
+- **Tudo o que estiver dentro de um diretório de família é oferecido**, com qualquer extensão, porque as ferramentas de CLP batizam o arquivo com a própria versão: o TIA Portal escreve `.zal` em versões antigas e `.zal17` na V17
+- A pasta entra no executável pelo `--add-data` de `scripts/build_windows.ps1`, então **trocar a biblioteca exige gerar o `.exe` de novo**
+- O nome amigável de cada família está em `FAMILY_LABELS`, em `app/libraries.py`; uma pasta não listada aparece com o próprio nome
+- Arquivos começando com ponto são ignorados, que é como uma pasta vazia sobrevive ao `git` (`.gitkeep`)
+- `GET /api/library` lista `family`, `label`, `filename`, `size_bytes` e `url` de cada arquivo. Sem arquivo nenhum, a Ajuda avisa em vez de oferecer um link que falharia
+- `GET /api/library/{familia}/{arquivo}` baixa o arquivo. A busca é por nome exato dentro das pastas já varridas, então o que o cliente digita na URL nunca vira caminho: `..%2F..%2Fsegredo.txt` responde 404
+- Os diretórios não são públicos e não estão sob `/static`
 
 ## Identidade do cliente
 

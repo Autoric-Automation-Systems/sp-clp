@@ -131,16 +131,16 @@
         <article class="panel doc">
           <p class="eyebrow">9. BIBLIOTECA</p><h3>Importar o bloco no TIA Portal</h3>
           <p>O painel foi feito para um bloco do CLP, o <code>FB_SP-CLP</code>. É ele que declara os endereços que o painel lê, então importe antes de montar a DB da máquina.</p>
-          <p id="library-download" class="library-download"></p>
+          <ul id="library-files" class="library-list"><li>Carregando...</li></ul>
           <ol>
-            <li>No TIA Portal, com o projeto aberto, escolha <strong>Opções &gt; Bibliotecas globais &gt; Abrir biblioteca global...</strong> e aponte para o arquivo <code>.zal</code> baixado.</li>
+            <li>No TIA Portal, com o projeto aberto, escolha <strong>Opções &gt; Bibliotecas globais &gt; Abrir biblioteca global...</strong> e aponte para o arquivo baixado. A extensão termina em <code>.zal</code> e pode vir com a versão do TIA junto, como <code>.zal17</code>.</li>
             <li>A biblioteca aberta aparece no painel <em>Bibliotecas</em>, à direita, já com o bloco <code>FB_SP-CLP</code> dentro dela.</li>
             <li>Arraste o bloco da biblioteca para <em>Blocos de programa</em> do seu projeto. Isso cria uma cópia: a partir daí o bloco é do projeto, e a biblioteca pode ser fechada.</li>
             <li>Chame o FB num <em>OB</em> cíclico (normalmente o <code>OB1</code>) e deixe o TIA criar a <strong>DB de instância</strong> dele. É essa DB que o painel vai ler.</li>
             <li>Na DB de instância, mantenha o <strong>acesso otimizado desligado</strong>. Sem isso as posições absolutas não existem e o painel não enxerga nada.</li>
           </ol>
           <p>Depois é só cadastrar a máquina no painel: informe o IP do CLP e use <em>Procurar DB</em>, que acha o número da DB de instância sozinho.</p>
-          <p class="form-hint"><svg class="icon" data-icon="info"></svg>Os nomes dos menus mudam um pouco entre as versões do TIA Portal. O que o painel precisa é sempre a mesma coisa: o bloco <code>FB_SP-CLP</code> dentro do projeto, chamado por um <em>OB</em> cíclico, com a DB de instância em acesso absoluto.</p>
+          <p class="form-hint"><svg class="icon" data-icon="info"></svg>A biblioteca precisa ser aberta com uma versão do TIA Portal <strong>igual ou mais nova</strong> que a que gerou o arquivo. Se o <code>.zal17</code> não abrir, atualize o TIA Portal.</p>
         </article>
       </div>
     </section>

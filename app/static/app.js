@@ -490,22 +490,24 @@ function formatBytes(size) {
   return (size / (1024 * 1024)).toFixed(1).replace('.', ',') + ' MB';
 }
 
-// The block ships with the panel, but a build may carry none, and the help page
-// must not offer a download that would fail.
+// A build may carry no block, and there may be more than one family, so the help
+// page lists whatever is really there instead of pointing at a fixed name.
 async function loadLibrary() {
-  const target = document.querySelector('#library-download');
+  const target = document.querySelector('#library-files');
   if (!target) return;
   const response = await request('/api/library');
   if (!response.ok) return;
   const info = await response.json();
-  if (!info.available) {
-    target.className = 'library-download missing';
-    target.innerHTML = icon('info') + 'A biblioteca do bloco não está nesta instalação do painel.';
+  const files = info.files || [];
+  if (files.length === 0) {
+    target.innerHTML = `<li class="library-empty">${icon('info')}A biblioteca do bloco não está nesta instalação do painel.</li>`;
     return;
   }
-  target.className = 'library-download';
-  target.innerHTML = `<a class="download-link with-icon" href="${esc(info.url)}" download>${icon('save')}Baixar biblioteca</a>`
-    + `<span>${esc(info.filename)} &middot; ${esc(formatBytes(info.size_bytes))}</span>`;
+  target.innerHTML = files.map(function (item) {
+    return `<li class="library-row"><span class="library-family">${esc(item.label)}</span>`
+      + `<a class="download-link with-icon" href="${esc(item.url)}" download>${icon('save')}${esc(item.filename)}</a>`
+      + `<span class="library-size">${esc(formatBytes(item.size_bytes))}</span></li>`;
+  }).join('');
 }
 
 async function showBrandingMessage(response, okText) {

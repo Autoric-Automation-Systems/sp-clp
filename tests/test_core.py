@@ -1596,72 +1596,95 @@ def test_machine_form_offers_the_sweep():
     assert "db_write" not in script
 
 
-def test_library_is_not_offered_when_the_build_carries_none(tmp_path, monkeypatch):
-    from app import library
+def test_library_lists_nothing_when_the_build_carries_none(tmp_path, monkeypatch):
+    from app import libraries
 
-    monkeypatch.setattr(library, "BUNDLED_DIR", tmp_path)
-    body = TestClient(app).get("/api/library").json()
-    assert body == {"available": False, "filename": None, "size_bytes": None, "url": None}
+    monkeypatch.setattr(libraries, "BUNDLED_DIR", tmp_path)
+    assert TestClient(app).get("/api/library").json() == {"files": []}
     # The help page must never offer a download that would fail.
-    assert TestClient(app).get("/api/library/download").status_code == 404
+    assert TestClient(app).get("/api/library/s7/FB_SP-CLP.zal").status_code == 404
 
 
-def test_library_is_offered_when_the_file_is_there(tmp_path, monkeypatch):
-    from app import library
+def test_library_lists_every_file_of_every_family(tmp_path, monkeypatch):
+    from app import libraries
 
-    block = tmp_path / "FB_SP-CLP.zal"
-    block.write_bytes(b"PK\x03\x04biblioteca")
-    monkeypatch.setattr(library, "BUNDLED_DIR", tmp_path)
+    (tmp_path / "s7").mkdir()
+    (tmp_path / "s7" / "FB_SP-CLP.zal17").write_bytes(b"PK\x03\x04versao-17")
+    (tmp_path / "s7" / "FB_SP-CLP.zal").write_bytes(b"PK\x03\x04antiga")
+    (tmp_path / "mitsubishi").mkdir()
+    (tmp_path / "mitsubishi" / "SP-CLP.gxw").write_bytes(b"outro-clp")
+    monkeypatch.setattr(libraries, "BUNDLED_DIR", tmp_path)
 
     body = TestClient(app).get("/api/library").json()
-    assert body["available"] is True
-    assert body["filename"] == "FB_SP-CLP.zal"
-    assert body["size_bytes"] == block.stat().st_size
-    assert body["url"] == "/api/library/download"
+    assert [(item["family"], item["filename"]) for item in body["files"]] == [
+        ("mitsubishi", "SP-CLP.gxw"),
+        ("s7", "FB_SP-CLP.zal"),
+        ("s7", "FB_SP-CLP.zal17"),
+    ]
+    # Known families get a name a customer can read; the rest show their folder.
+    labels = {item["family"]: item["label"] for item in body["files"]}
+    assert labels == {"s7": "Siemens S7", "mitsubishi": "mitsubishi"}
+    versions = {item["filename"]: item["size_bytes"] for item in body["files"]}
+    assert versions["FB_SP-CLP.zal17"] == len(b"PK\x03\x04versao-17")
 
 
-def test_library_download_sends_the_file_as_an_attachment(tmp_path, monkeypatch):
-    from app import library
+def test_library_offers_a_versioned_tia_export(tmp_path, monkeypatch):
+    """TIA Portal writes .zal17 for V17, which a *.zal rule would have missed."""
+    from app import libraries
 
-    payload = b"PK\x03\x04conteudo-binario"
-    (tmp_path / "FB_SP-CLP.zal").write_bytes(payload)
-    monkeypatch.setattr(library, "BUNDLED_DIR", tmp_path)
+    (tmp_path / "s7").mkdir()
+    (tmp_path / "s7" / "FB_SP-CLP.zal17").write_bytes(b"PK\x03\x04")
+    monkeypatch.setattr(libraries, "BUNDLED_DIR", tmp_path)
 
-    response = TestClient(app).get("/api/library/download")
+    item = TestClient(app).get("/api/library").json()["files"][0]
+    assert item["filename"] == "FB_SP-CLP.zal17"
+    assert item["url"] == "/api/library/s7/FB_SP-CLP.zal17"
+
+    response = TestClient(app).get(item["url"])
     assert response.status_code == 200
-    assert response.content == payload
+    assert response.content == b"PK\x03\x04"
     disposition = response.headers["content-disposition"]
     assert "attachment" in disposition
-    assert "FB_SP-CLP.zal" in disposition
+    assert "FB_SP-CLP.zal17" in disposition
 
 
-def test_library_offers_only_the_tia_portal_format(tmp_path, monkeypatch):
-    """A stray file in the folder must not become a download."""
-    from app import library
+def test_library_ignores_dotfiles_and_stray_folders(tmp_path, monkeypatch):
+    """A .gitkeep keeps an empty folder in git; it is not a library."""
+    from app import libraries
 
-    (tmp_path / "LEIA-ME.txt").write_text("nao sou a biblioteca")
-    (tmp_path / "rascunho.scl").write_text("// tambem nao")
-    monkeypatch.setattr(library, "BUNDLED_DIR", tmp_path)
+    (tmp_path / "s7").mkdir()
+    (tmp_path / "s7" / ".gitkeep").write_text("")
+    (tmp_path / "s7" / "rascunho").mkdir()
+    monkeypatch.setattr(libraries, "BUNDLED_DIR", tmp_path)
 
-    assert library.library_file() is None
-    assert TestClient(app).get("/api/library").json()["available"] is False
-
-
-def test_library_picks_the_first_name_alphabetically(tmp_path, monkeypatch):
-    from app import library
-
-    (tmp_path / "z-antiga.zal").write_bytes(b"velha")
-    (tmp_path / "a-nova.zal").write_bytes(b"nova")
-    monkeypatch.setattr(library, "BUNDLED_DIR", tmp_path)
-
-    # The name shows next to the button, so a folder with two files is visible.
-    assert library.library_file().name == "a-nova.zal"
+    assert libraries.available_files() == []
+    assert TestClient(app).get("/api/library").json() == {"files": []}
 
 
-def test_help_page_explains_the_tia_portal_import():
+def test_library_refuses_a_path_outside_the_folders(tmp_path, monkeypatch):
+    from app import libraries
+
+    (tmp_path / "s7").mkdir()
+    (tmp_path / "s7" / "FB_SP-CLP.zal17").write_bytes(b"PK\x03\x04")
+    (tmp_path / "segredo.txt").write_text("nao e para sair")
+    monkeypatch.setattr(libraries, "BUNDLED_DIR", tmp_path)
+
+    # Only the scanned folders are reachable, and only by exact name.
+    for url in (
+        "/api/library/s7/..%2F..%2Fsegredo.txt",
+        "/api/library/../segredo.txt",
+        "/api/library//segredo.txt",
+        "/api/library/s7/FB_SP-CLP.zal",
+        "/api/library/nao-existe/FB_SP-CLP.zal17",
+    ):
+        assert TestClient(app).get(url).status_code == 404, url
+
+
+def test_help_page_lists_the_library_files():
     page = TestClient(app).get("/").text
     assert "9. BIBLIOTECA" in page
     assert "Abrir biblioteca global" in page
     assert "FB_SP-CLP" in page
-    assert 'id="library-download"' in page
+    assert 'id="library-files"' in page
+    # The rows are built in app.js, so the list must wait for the endpoint.
     assert "loadLibrary" in TestClient(app).get("/static/app.js").text
