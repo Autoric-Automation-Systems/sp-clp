@@ -222,6 +222,16 @@ class PLCProbeClient(Protocol):
     def close(self) -> None: ...
 
 
+def readable_signature(block: bytes) -> str:
+    """Return only the text characters found in a block.
+
+    A wrong offset usually points at numbers, and showing those bytes as text
+    would print gibberish instead of admitting that nothing readable is there.
+    """
+    text = "".join(chr(byte) if 32 <= byte < 127 else " " for byte in block)
+    return " ".join(text.split())
+
+
 def probe_plc(prober: PLCProbeClient, db_number: int, label: str) -> PLCProbe:
     """Answer whether a DB is really an SP-CLP DB. Reads only, never writes.
 
@@ -256,7 +266,7 @@ def probe_plc(prober: PLCProbeClient, db_number: int, label: str) -> PLCProbe:
             )
         # What is actually written in the block is the actionable part here, so it
         # goes in the message and not only in the technical detail.
-        found = block.decode("ascii", "replace").strip("\x00").strip()
+        found = readable_signature(block)
         return PLCProbe(
             PROBE_UNSIGNED,
             f"O CLP respondeu, mas a DB {db_number} não tem a assinatura do SP-CLP. "

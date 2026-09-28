@@ -1256,8 +1256,21 @@ def test_probe_shows_the_signature_it_found():
     assert empty.status == PROBE_UNSIGNED
     assert "vazio" in empty.message
     assert empty.detail is None
-    # Bytes that are not text at all must not break the response either.
-    assert _probe(signature=bytes([255, 254, 253, 252, 251, 250, 249, 248])).status == PROBE_UNSIGNED
+    # Bytes that are not text at all must not break the response either, and a
+    # block full of numbers must not be printed as gibberish.
+    numeric = _probe(signature=bytes([255, 254, 253, 252, 251, 250, 249, 248]))
+    assert numeric.status == PROBE_UNSIGNED
+    assert numeric.detail is None
+
+
+def test_probe_reads_only_text_out_of_a_mixed_block():
+    """A wrong offset usually points at numbers, which are not a signature."""
+    from app.plc import SIGNATURE, readable_signature
+
+    assert readable_signature(b"SPX\x00\x00\x00\x00\x00") == "SPX"
+    assert readable_signature(b"\x00\x01\x02\x03") == ""
+    assert readable_signature(b"P\x00\x04\xe2\x00\x00") == "P"
+    assert readable_signature(SIGNATURE) == "SPCLPDB1"
 
 
 def test_probe_never_leaves_the_connection_open():
