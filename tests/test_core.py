@@ -1684,6 +1684,25 @@ def test_library_refuses_a_path_outside_the_folders(tmp_path, monkeypatch):
         assert TestClient(app).get(url).status_code == 404, url
 
 
+def test_status_blocks_colour_the_icon_without_trusting_colour_alone():
+    css = TestClient(app).get("/static/styles.css").text
+    for hue in ("on-blue", "on-green", "on-red", "on-cyan"):
+        assert f".state.{hue}{{" in css, hue
+    # A card with no reading must never look like a stopped machine, so the ring
+    # changes shape and not only shade.
+    assert ".state.unknown .state-icon{background:transparent;border:1.5px dashed" in css
+
+    script = TestClient(app).get("/static/app.js").text
+    assert "STATE_HUES" in script
+    assert "statusColour" in script
+    # The word and the shape stay, so a colour-blind operator loses nothing.
+    assert "counter: ['Sem contagem', 'Contando']" in script
+    assert "statusTooltip" in script
+
+    page = TestClient(app).get("/").text
+    assert "tracejado" in page
+
+
 def test_help_page_lists_the_library_files():
     page = TestClient(app).get("/").text
     assert "9. BIBLIOTECA" in page

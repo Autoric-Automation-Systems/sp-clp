@@ -70,6 +70,7 @@ A página **Ajuda** do painel traz o mesmo conteúdo para o cliente.
 - Slot padrão: `1`
 - Sinais padrão: `AUTO` (`0.0`), `RUN` (`0.1`), `FAULT` (`0.2`), `SAFETY` (`0.3`) e `COUNTER` (`0.4`). Fault e Safety são coisas diferentes: falha da máquina e cadeado de segurança. Nome e tipo são do contrato e **não podem ser alterados**
 - Polaridade dos bits padrão: `AUTO` 1 = automático, 0 = manual; `RUN` 1 = produzindo, 0 = parado; `FAULT` 1 = **em falha**, 0 = normal; `SAFETY` 1 = normal, 0 = pendente; `COUNTER` 1 = contando, 0 = sem contagem
+- Cores do card: `AUTO` azul, `RUN` e `SAFETY` verdes, `FAULT` vermelho, `COUNTER` ciano. Bit em 0 fica cinza e sem leitura do CLP fica tracejado, que são coisas diferentes
 - Sinais: os 16 BOOLs ocupam `0.0` a `1.7`, sem intervalo
 - Sinais adicionais: posições fixas de `0.5` a `0.7` e de `1.0` a `1.7`; apenas o rótulo é editável
 - Os sinais livres aparecem no card como `1 LIGADO` ou `0 DESLIGADO`, com o bit à vista, porque o nome é do cliente e não há vocabulário combinado

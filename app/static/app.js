@@ -99,11 +99,36 @@ function stateText(item, state) {
   return item.value ? words[1] : words[0];
 }
 
+// The hue of each standard signal when its bit is set. The colour is a second
+// channel, never the only one: the shape of the icon and the word below it say the
+// same thing, so colour blindness or a dirty screen does not hide a state.
+const STATE_HUES = {
+  auto: 'blue',
+  run: 'green',
+  fault: 'red',
+  safety: 'green',
+  counter: 'cyan',
+};
+
+function statusColour(item, state) {
+  // A lost link must never look like a bit at zero, or a card reads as a stopped
+  // machine when the panel simply cannot see the PLC.
+  if (state === 'unknown') return 'unknown';
+  return item.value ? STATE_HUES[item.kind] || 'blue' : 'off';
+}
+
+function statusTooltip(item, state) {
+  if (state === 'unknown') return `${item.label} (${item.address}) - sem leitura do CLP`;
+  return `${item.label} (${item.address}) - bit ${item.value ? 1 : 0}`;
+}
+
 function statusBlock(item) {
   if (!item) return '';
   const state = stateOf(item);
   const text = stateText(item, state);
-  return `<div class="state ${state}"><span class="state-icon">${icon(signalIcon(item))}</span><div><strong>${text}</strong><small>${esc(item.label)}</small></div></div>`;
+  const colour = statusColour(item, state);
+  const tip = statusTooltip(item, state);
+  return `<div class="state ${colour}" title="${esc(tip)}"><span class="state-icon">${icon(signalIcon(item))}</span><div><strong>${text}</strong><small>${esc(item.label)}</small></div></div>`;
 }
 
 function signalsOfKind(status, kind) {
