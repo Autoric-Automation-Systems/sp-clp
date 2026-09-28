@@ -35,11 +35,22 @@ Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O
 - O contador reinicia quando o CLP reinicia; qualquer redução do valor inicia nova linha de base e não produz valor negativo
 - Totais horários usam o fuso configurado para cada máquina
 
+## Endereços
+
+O dashboard mostra um único card com todas as plantas e o status de cada máquina. Cada planta responde no seu próprio endereço, derivado do nome:
+
+- `/RioVerde`, `/Anapolis`, `/Plant-1` — página da planta, com os cards completos de cada máquina
+- `/Configuracoes` e `/Ajuda` — menu
+- Endereços são comparados sem diferenciar maiúsculas, e nomes reservados (`Ajuda`, `Configuracoes`, `Dashboard`) não viram endereço de planta
+
+A página `Ajuda` traz a documentação de uso: acesso, cadastro, rótulos de sinais, leitura do painel e solução de problemas.
+
 ## Estrutura
 
 - `app/main.py`: API FastAPI e rotas do dashboard
 - `app/plc.py`: protocolo, parser, simulador e adaptador Snap7
 - `app/storage.py`: SQLite, amostras e totais horários
+- `app/slugs.py`: nome da planta convertido em endereço
 - `app/security.py`: hash de senha PBKDF2
 - `app/static/`: dashboard HTML/CSS/JavaScript
 - `app/static/icons.js`: ícones do [Lucide](https://lucide.dev) gerados por `scripts/build_icons.py` e servidos localmente, sem CDN

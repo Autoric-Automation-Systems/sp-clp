@@ -35,6 +35,7 @@ ICONS = (
     "refresh-cw",
     "chevron-down",
     "chevron-up",
+    "arrow-right",
     # plant structure
     "factory",
     "layers",

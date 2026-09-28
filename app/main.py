@@ -31,6 +31,7 @@ from .plc import (
     signal_label,
 )
 from .security import hash_password, verify_password
+from .slugs import RESERVED_PAGES, plant_slugs, slugify
 from .storage import Storage
 from .timezones import local_hour
 
@@ -64,6 +65,23 @@ def client_for(machine) -> PLCClient:
 
 @app.get("/", response_class=FileResponse)
 def dashboard() -> Path:
+    return BASE_DIR / "static" / "index.html"
+
+
+def _known_pages() -> set[str]:
+    return {slug.casefold() for slug in plant_slugs({machine["plant_name"] for machine in storage.list_machines()})}
+
+
+@app.get("/{page}", response_class=FileResponse)
+def named_page(page: str) -> Path:
+    """Every plant answers on its own address, and so does every menu page.
+
+    The router only sees one segment here, so /api/... and /static/... keep
+    their own handlers.
+    """
+    allowed = {item.casefold() for item in RESERVED_PAGES} | _known_pages()
+    if page.casefold() not in allowed:
+        raise HTTPException(status_code=404, detail="Pagina nao encontrada")
     return BASE_DIR / "static" / "index.html"
 
 
@@ -122,7 +140,12 @@ def delete_machine(machine_id: int) -> None:
 
 @app.get("/api/machines")
 def list_machines() -> list[dict]:
-    return [dict(row) for row in storage.list_machines()]
+    # plant_slug lets the dashboard link each plant to its own address without
+    # duplicating the slug rules in JavaScript.
+    return [
+        {**dict(row), "plant_slug": slugify(row["plant_name"])}
+        for row in storage.list_machines()
+    ]
 
 
 def build_signals(labels: dict[str, str], bits: dict[str, bool] | None) -> list[SignalValue]:

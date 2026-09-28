@@ -13,12 +13,16 @@
   <header class="topbar">
     <div class="brand"><img class="brand-icon" src="/static/assets/favicon_io/android-chrome-192x192.png" alt=""><div><span class="eyebrow">MONITORAMENTO INDUSTRIAL</span><h1>SP-CLP</h1></div></div>
     <div class="topbar-tools"><span id="session-state" class="session-state">Visitante</span><button id="menu-toggle" class="menu-toggle" aria-expanded="false" aria-controls="main-menu"><span></span><span></span><span></span><b>Menu</b></button></div>
-  </header>
-  <aside id="main-menu" class="main-menu" aria-hidden="true"><div class="menu-heading"><span class="eyebrow">NAVEGAÇÃO</span><button id="menu-close" class="menu-close" aria-label="Fechar menu"><svg class="icon" data-icon="x"></svg></button></div><nav><button class="nav-button active" data-page="dashboard"><svg class="icon" data-icon="layout-dashboard"></svg>Dashboard</button><button class="nav-button" data-page="settings"><svg class="icon" data-icon="settings"></svg>Configurações</button></nav><p class="menu-note">Monitoramento local<br>somente leitura</p></aside><div id="menu-backdrop" class="menu-backdrop"></div>
+  </header>  <aside id="main-menu" class="main-menu" aria-hidden="true"><div class="menu-heading"><span class="eyebrow">NAVEGAÇÃO</span><button id="menu-close" class="menu-close" aria-label="Fechar menu"><svg class="icon" data-icon="x"></svg></button></div><nav><button class="nav-button active" data-route="/"><svg class="icon" data-icon="layout-dashboard"></svg>Dashboard</button><button class="nav-button" data-route="/Configuracoes"><svg class="icon" data-icon="settings"></svg>Configurações</button><button class="nav-button" data-route="/Ajuda"><svg class="icon" data-icon="circle-help"></svg>Ajuda</button></nav><p class="menu-note">Monitoramento local<br>somente leitura</p></aside><div id="menu-backdrop" class="menu-backdrop"></div>
   <main>
     <section id="dashboard-page" class="page">
       <section class="intro"><div><p class="eyebrow">PÁGINA ATUAL / DASHBOARD</p><h2>Visão da produção</h2></div><span id="refresh-state">Aguardando máquinas...</span></section>
       <section id="machines" class="machine-groups"></section><section id="empty" class="empty"><svg class="icon" data-icon="inbox"></svg>Nenhuma máquina configurada ainda.</section>
+    </section>
+    <section id="plant-page" class="page" hidden>
+      <section class="intro"><div><p class="eyebrow">PLANTA</p><h2 id="plant-title">Planta</h2><p id="plant-address" class="plant-address"></p></div><a id="plant-back" class="back-link" href="/" data-route="/"><svg class="icon" data-icon="layout-dashboard"></svg>Voltar ao painel</a></section>
+      <section id="plant-machines" class="machine-groups"></section>
+      <section id="plant-empty" class="empty" hidden><svg class="icon" data-icon="inbox"></svg>Nenhuma máquina nesta planta.</section>
     </section>
     <section id="settings-page" class="page" hidden>
       <section class="intro"><div><p class="eyebrow">PÁGINA ATUAL / CONFIGURAÇÕES</p><h2>Estrutura da planta</h2></div><span class="private-label"><svg class="icon" data-icon="lock"></svg>Área protegida</span></section>
@@ -31,8 +35,68 @@
         <div class="panel config-list"><p class="eyebrow">CADASTRO ATUAL</p><h3>Áreas e máquinas cadastradas</h3><div id="area-list"></div></div>
       </section>
     </section>
+    <section id="help-page" class="page" hidden>
+      <section class="intro"><div><p class="eyebrow">PÁGINA ATUAL / AJUDA</p><h2>Como usar o SP-CLP</h2></div><span class="private-label"><svg class="icon" data-icon="info"></svg>Documentação</span></section>
+      <div class="doc-grid">
+        <article class="panel doc">
+          <p class="eyebrow">1. ACESSO</p><h3>Entrar na configuração</h3>
+          <p>O painel abre sem senha, mas <strong>configurar exige login</strong>. Na página Configurações, clique em <em>Entrar</em>.</p>
+          <ul>
+            <li>Primeira vez: crie uma senha com pelo menos 8 caracteres. Ela fica guardada como hash, não como texto.</li>
+            <li>Depois: basta informar a mesma senha.</li>
+            <li>A sessão dura enquanto o servidor estiver rodando; ao reiniciar, faça login de novo.</li>
+          </ul>
+        </article>
+        <article class="panel doc">
+          <p class="eyebrow">2. CADASTRO</p><h3>Plantas, áreas e máquinas</h3>
+          <ul>
+            <li><strong>Planta</strong> é o grupo maior (ex.: <em>RioVerde</em>). Cada planta ganha um endereço próprio, como <code>/RioVerde</code>, a partir do nome que você digitar.</li>
+            <li><strong>Área</strong> organiza as máquinas dentro da planta.</li>
+            <li><strong>Máquina</strong> precisa de nome, <strong>IP do CLP</strong>, <strong>DB</strong> e fuso horário. Rack <code>0</code> e slot <code>1</code> são fixos.</li>
+            <li>Para testar sem CLP, use <code>fake</code> como IP: o servidor gera leituras simuladas.</li>
+          </ul>
+        </article>
+        <article class="panel doc">
+          <p class="eyebrow">3. SINAIS</p><h3>Renomear os sinais</h3>
+          <p>Em Configurações, clique em <em>Sinais</em> na máquina desejada.</p>
+          <ul>
+            <li><strong>Fixo</strong> (com cadeado): <code>AUTO</code> (0.0), <code>RUN</code> (0.1) e <code>Segurança</code> (0.2). O nome é do contrato e não muda.</li>
+            <li><strong>Renomável</strong>: as posições <code>0.3</code>–<code>0.7</code>, <code>1.0</code>–<code>1.7</code> e o contador.</li>
+            <li>Cada nome precisa ser <strong>único na máquina</strong>. Maiúsculas e acentos não diferenciam: <em>Portao</em> e <em>Portão</em> contam como repetidos.</li>
+            <li>Deixar o campo vazio devolve o nome padrão.</li>
+          </ul>
+        </article>
+        <article class="panel doc">
+          <p class="eyebrow">4. LEITURA</p><h3>O que o painel mostra</h3>
+          <ul>
+            <li><strong>Online</strong> verde: o CLP respondeu na última leitura.</li>
+            <li><strong>Offline</strong>: sem resposta. O painel continua atualizando a cada 5 s e volta sozinho quando o CLP responder.</li>
+            <li><strong>Ativo</strong> / <strong>Parado</strong>: estado do bit. <strong>Sem leitura</strong> significa que o CLP não pôde ser lido — não é o mesmo que bit desligado.</li>
+            <li><strong>Contagens por hora</strong>: totais fechados por hora, no fuso configurado da máquina.</li>
+          </ul>
+        </article>
+        <article class="panel doc">
+          <p class="eyebrow">5. ENDEREÇOS</p><h3>Um endereço por planta</h3>
+          <p>O painel principal mostra todas as plantas com o status de cada máquina. Clicando em uma planta você abre os detalhes dela em um endereço próprio, que pode ser favoritado ou aberto direto:</p>
+          <ul>
+            <li><code>/RioVerde</code>, <code>/Anapolis</code> — uma planta por endereço.</li>
+            <li><code>/Configuracoes</code> e <code>/Ajuda</code> — as demais páginas.</li>
+          </ul>
+        </article>
+        <article class="panel doc">
+          <p class="eyebrow">6. PROBLEMAS</p><h3>Quando algo não funciona</h3>
+          <ul>
+            <li><strong>Tudo offline ao mesmo tempo</strong>: confira o cabo/rede do painel e se o IP no cadastro é o do CLP.</li>
+            <li><strong>Uma máquina só</strong>: veja se outro equipamento já usa aquele IP.</li>
+            <li><strong>Bit sempre parado</strong>: confira o DB informado no cadastro e a posição no programa do CLP.</li>
+            <li><strong>Contador zerando</strong>: o contador reinicia quando o CLP reinicia; a redução vira uma nova linha de base e nunca gera valor negativo.</li>
+            <li><strong>Senha esquecida</strong>: apague a tabela <code>settings</code> do arquivo <code>data/sp-clp.sqlite3</code> e crie uma nova senha.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
   </main>
-  <footer><a class="company-link" href="https://www.autoric.com.br" target="_blank" rel="noopener noreferrer"><img src="/static/assets/logo/logo-dev.png" alt="Autoric Automação e Sistemas"><span>www.autoric.com.br</span><svg class="icon" data-icon="link"></svg></a><div class="footer-links"><a class="social-link" href="https://github.com/Autoric-Automation-Systems/sp-clp" target="_blank" rel="noopener noreferrer" title="https://github.com/Autoric-Automation-Systems/sp-clp"><svg class="icon" data-icon="github"></svg><span>Autoric-Automation-Systems/sp-clp</span></a><a class="social-link" href="https://www.instagram.com/autoricbr/" target="_blank" rel="noopener noreferrer" title="Instagram @autoricbr"><svg class="icon" data-icon="instagram"></svg><span>@autoricbr</span></a></div><span id="footer-connection"><svg class="icon" data-icon="server"></svg>Servidor local ativo</span></footer>
+  <footer><a class="company-link" href="https://www.autoric.com.br" target="_blank" rel="noopener noreferrer"><img src="/static/assets/logo/logo-dev.png" alt="Autoric Automação e Sistemas"><span>www.autoric.com.br</span><svg class="icon" data-icon="link"></svg></a><div class="footer-links"><a class="social-link" href="https://github.com/Autoric-Automation-Systems/sp-clp" target="_blank" rel="noopener noreferrer" title="GitHub: Autoric-Automation-Systems/sp-clp" aria-label="GitHub: Autoric-Automation-Systems/sp-clp"><svg class="icon" data-icon="github"></svg></a><a class="social-link" href="https://www.instagram.com/autoricbr/" target="_blank" rel="noopener noreferrer" title="Instagram: @autoricbr" aria-label="Instagram: @autoricbr"><svg class="icon" data-icon="instagram"></svg></a></div><span id="footer-connection"><svg class="icon" data-icon="server"></svg>Servidor local ativo</span></footer>
   <dialog id="settings-dialog"><form method="dialog" id="settings-form"><button class="close" value="cancel" aria-label="Fechar"><svg class="icon" data-icon="x"></svg></button><p class="eyebrow">ACESSO RESTRITO</p><h2>Autenticação</h2><div id="setup-fields"><label>Crie a senha inicial<input id="setup-password" type="password" minlength="8"></label><button type="button" id="setup-button" class="with-icon"><svg class="icon" data-icon="lock"></svg>Criar senha</button></div><div id="login-fields" hidden><label>Senha<input id="login-password" type="password"></label><button type="button" id="login-button" class="with-icon"><svg class="icon" data-icon="log-in"></svg>Entrar</button></div><p id="settings-message" role="status"></p></form></dialog>
   <dialog id="signals-dialog"><form id="signals-form"><button type="button" class="close" id="signals-close" aria-label="Fechar"><svg class="icon" data-icon="x"></svg></button><p class="eyebrow">SINAIS DA MÁQUINA</p><h2>Rótulos dos sinais</h2><p class="hint">O endereço e o tipo vêm do DB do PLC e não podem ser alterados. Os sinais fixos (AUTO, RUN e Segurança) usam os nomes do contrato; os demais, incluindo o contador, podem ser renomeados, e cada nome precisa ser único.</p><div id="signals-editor" class="labels-editor"></div><p id="signals-message" role="status"></p><div class="dialog-actions"><button type="button" id="signals-save" class="with-icon"><svg class="icon" data-icon="save"></svg>Salvar rótulos</button><button type="button" id="signals-cancel" class="secondary with-icon"><svg class="icon" data-icon="x"></svg>Fechar</button></div></form></dialog>
   <script src="/static/icons.js"></script>

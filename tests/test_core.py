@@ -596,3 +596,77 @@ def test_icon_module_loads_before_the_dashboard_script():
     # Placeholders are hydrated by icons.js, which therefore has to load first.
     assert 'data-icon="layout-dashboard"' in page.text
     assert page.text.index("/static/icons.js") < page.text.index("/static/app.js")
+
+
+def test_plant_slugs_are_url_safe():
+    from app.slugs import plant_slugs, slugify
+
+    assert slugify("RioVerde") == "RioVerde"
+    assert slugify("Rio Verde") == "Rio-Verde"
+    assert slugify("Anápolis") == "Anapolis"
+    assert slugify("  Linha  2  ") == "Linha-2"
+    assert slugify("!!!") == ""
+    # Ajuda e Configuracoes are menu addresses, so a plant cannot take them.
+    assert plant_slugs({"RioVerde", "Ajuda", "configuracoes", "!!!"}) == {"rioverde": "RioVerde"}
+
+
+def test_machine_payload_carries_the_plant_slug():
+    area_id = app_storage.add_area("Rio Verde", "Linha 1")
+    machine_id = app_storage.add_machine(area_id, "M Slug", "fake", 53, "UTC")
+    try:
+        machines = {item["id"]: item for item in TestClient(app).get("/api/machines").json()}
+        assert machines[machine_id]["plant_name"] == "Rio Verde"
+        assert machines[machine_id]["plant_slug"] == "Rio-Verde"
+    finally:
+        app_storage.delete_machine(machine_id)
+
+
+def test_every_plant_answers_on_its_own_address():
+    client = TestClient(app)
+    area_id = app_storage.add_area("RioVerde", "Linha 1")
+    machine_id = app_storage.add_machine(area_id, "M Rota", "fake", 53, "UTC")
+    try:
+        response = client.get("/RioVerde")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        # Addresses are matched without regard to case.
+        assert client.get("/rioverde").status_code == 200
+        # Menu pages live in the same namespace.
+        assert client.get("/Ajuda").status_code == 200
+        assert client.get("/Configuracoes").status_code == 200
+        assert client.get("/Anapolis").status_code == 404
+        assert client.get("/qualquer-coisa").status_code == 404
+        # The single segment route must not shadow the API or the assets.
+        assert client.get("/api/machines").status_code == 200
+        assert client.get("/static/app.js").status_code == 200
+    finally:
+        app_storage.delete_machine(machine_id)
+
+
+def test_help_page_is_in_the_menu_and_documents_the_signals():
+    page = TestClient(app).get("/")
+    assert page.status_code == 200
+    assert 'id="help-page"' in page.text
+    assert 'data-route="/Ajuda"' in page.text
+    assert 'data-route="/Configuracoes"' in page.text
+    assert "Renomear os sinais" in page.text
+    assert "Cada nome precisa ser" in page.text
+
+
+def test_footer_social_links_show_only_the_icon():
+    page = TestClient(app).get("/").text
+    assert "https://github.com/Autoric-Automation-Systems/sp-clp" in page
+    assert "https://www.instagram.com/autoricbr/" in page
+    # The address lives in the link itself, not as visible text next to the icon.
+    assert "<span>Autoric-Automation-Systems/sp-clp</span>" not in page
+    assert "<span>@autoricbr</span>" not in page
+    assert 'title="GitHub: Autoric-Automation-Systems/sp-clp"' in page
+    assert 'title="Instagram: @autoricbr"' in page
+
+
+def test_bit_address_is_only_shown_in_the_signal_list():
+    script = TestClient(app).get("/static/app.js").text
+    # The status blocks and the counter header no longer repeat the bit address.
+    assert 'em class="address"' not in script
+    # The expandable signal list keeps it, because that is where it is useful.
+    assert 'class="signal-address"' in script
