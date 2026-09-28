@@ -373,18 +373,6 @@ async function loadBranding() {
   if (response.ok) applyBranding(await response.json());
 }
 
-function fileToBase64(file) {
-  return new Promise(function (resolve, reject) {
-    const reader = new FileReader();
-    reader.onload = function () {
-      // "data:image/png;base64,AAAA" -> "AAAA"
-      resolve(String(reader.result).split(',')[1] || '');
-    };
-    reader.onerror = function () { reject(new Error('read failed')); };
-    reader.readAsDataURL(file);
-  });
-}
-
 async function showBrandingMessage(response, okText) {
   const target = document.querySelector('#branding-message');
   if (response.ok) {
@@ -397,6 +385,125 @@ async function showBrandingMessage(response, okText) {
   return false;
 }
 
+// The header frame is a fixed square, so a wide logo has to be framed by hand.
+const CROP_SIZE = 256;
+let cropImage = null;
+let cropZoom = 1;
+let cropOffset = {x: 0, y: 0};
+let cropDrag = null;
+
+function cropCanvas() {
+  return document.querySelector('#crop-canvas');
+}
+
+function cropCover() {
+  if (!cropImage) return 1;
+  return Math.max(CROP_SIZE / cropImage.width, CROP_SIZE / cropImage.height);
+}
+
+function drawCrop() {
+  const canvas = cropCanvas();
+  const context = canvas.getContext('2d');
+  context.clearRect(0, 0, CROP_SIZE, CROP_SIZE);
+  if (!cropImage) return;
+  const scale = cropCover() * cropZoom;
+  const width = cropImage.width * scale;
+  const height = cropImage.height * scale;
+  // Keep the picture covering the frame: no empty band may show through.
+  cropOffset.x = Math.min(0, Math.max(CROP_SIZE - width, cropOffset.x));
+  cropOffset.y = Math.min(0, Math.max(CROP_SIZE - height, cropOffset.y));
+  context.drawImage(cropImage, cropOffset.x, cropOffset.y, width, height);
+}
+
+function centerCrop() {
+  const scale = cropCover() * cropZoom;
+  cropOffset.x = (CROP_SIZE - cropImage.width * scale) / 2;
+  cropOffset.y = (CROP_SIZE - cropImage.height * scale) / 2;
+}
+
+function setCropZoom(value) {
+  const scaleBefore = cropCover() * cropZoom;
+  // Anchor the zoom on the middle of the frame instead of the corner.
+  const anchorX = (CROP_SIZE / 2 - cropOffset.x) / scaleBefore;
+  const anchorY = (CROP_SIZE / 2 - cropOffset.y) / scaleBefore;
+  cropZoom = value;
+  const scaleAfter = cropCover() * cropZoom;
+  cropOffset.x = CROP_SIZE / 2 - anchorX * scaleAfter;
+  cropOffset.y = CROP_SIZE / 2 - anchorY * scaleAfter;
+  drawCrop();
+}
+
+function openCropTool(file) {
+  const image = new Image();
+  image.onload = function () {
+    cropImage = image;
+    cropZoom = 1;
+    document.querySelector('#crop-zoom').value = '1';
+    centerCrop();
+    drawCrop();
+    document.querySelector('#logo-message').textContent = '';
+    document.querySelector('#logo-dialog').showModal();
+  };
+  image.onerror = function () {
+    document.querySelector('#branding-message').textContent = 'Não foi possível abrir a imagem.';
+  };
+  image.src = URL.createObjectURL(file);
+}
+
+document.querySelector('#crop-canvas').addEventListener('pointerdown', function (event) {
+  if (!cropImage) return;
+  cropDrag = {x: event.clientX, y: event.clientY, offsetX: cropOffset.x, offsetY: cropOffset.y};
+  event.target.setPointerCapture(event.pointerId);
+});
+
+document.querySelector('#crop-canvas').addEventListener('pointermove', function (event) {
+  if (!cropDrag) return;
+  const box = event.target.getBoundingClientRect();
+  const ratio = CROP_SIZE / box.width;
+  cropOffset.x = cropDrag.offsetX + (event.clientX - cropDrag.x) * ratio;
+  cropOffset.y = cropDrag.offsetY + (event.clientY - cropDrag.y) * ratio;
+  drawCrop();
+});
+
+document.querySelector('#crop-canvas').addEventListener('pointerup', function () {
+  cropDrag = null;
+});
+
+document.querySelector('#crop-zoom').oninput = function (event) {
+  if (!cropImage) return;
+  setCropZoom(Number(event.target.value) || 1);
+};
+
+document.querySelector('#company-logo').onchange = function (event) {
+  const file = event.target.files[0];
+  if (file) openCropTool(file);
+};
+
+document.querySelector('#logo-apply').onclick = async function () {
+  const cropped = cropCanvas().toDataURL('image/png').split(',')[1] || '';
+  const response = await request('/api/config/branding/logo', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({filename: 'logo.png', content: cropped}),
+  });
+  const ok = await showBrandingMessage(response, 'Logotipo atualizado.');
+  document.querySelector('#logo-message').textContent = ok ? '' : document.querySelector('#branding-message').textContent;
+  if (ok) {
+    document.querySelector('#company-logo').value = '';
+    document.querySelector('#logo-dialog').close();
+  }
+};
+
+document.querySelector('#logo-cancel').onclick = function () {
+  document.querySelector('#company-logo').value = '';
+  document.querySelector('#logo-dialog').close();
+};
+
+document.querySelector('#logo-close').onclick = function () {
+  document.querySelector('#company-logo').value = '';
+  document.querySelector('#logo-dialog').close();
+};
+
 document.querySelector('#branding-form').onsubmit = async function (event) {
   event.preventDefault();
   const name = await request('/api/config/branding', {
@@ -404,24 +511,7 @@ document.querySelector('#branding-form').onsubmit = async function (event) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({company_name: document.querySelector('#company-name').value}),
   });
-  if (!(await showBrandingMessage(name, 'Identidade salva.'))) return;
-
-  const file = document.querySelector('#company-logo').files[0];
-  if (!file) return;
-  let content = '';
-  try {
-    content = await fileToBase64(file);
-  } catch (error) {
-    document.querySelector('#branding-message').textContent = 'Não foi possível ler o arquivo.';
-    return;
-  }
-  const logo = await request('/api/config/branding/logo', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({filename: file.name, content: content}),
-  });
-  await showBrandingMessage(logo, 'Identidade e logotipo salvos.');
-  if (logo.ok) document.querySelector('#company-logo').value = '';
+  await showBrandingMessage(name, 'Identidade salva.');
 };
 
 document.querySelector('#branding-logo-remove').onclick = async function () {

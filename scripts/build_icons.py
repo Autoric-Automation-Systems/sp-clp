@@ -42,6 +42,7 @@ ICONS = (
     "layers",
     "plus",
     "pencil",
+    "crop",
     "trash-2",
     "save",
     "tag",

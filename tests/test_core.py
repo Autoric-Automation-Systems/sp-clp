@@ -811,6 +811,23 @@ def test_dashboard_header_carries_the_branding():
     assert "applyBranding" in script
 
 
+def test_footer_keeps_the_product_mark():
+    page = TestClient(app).get("/").text
+    # The client logo takes the header, so the product mark lives in the footer.
+    assert 'class="footer-brand"' in page
+    assert "android-chrome-192x192.png" in page
+
+
+def test_logo_crop_tool_is_wired():
+    page = TestClient(app).get("/").text
+    assert 'id="logo-dialog"' in page
+    assert 'id="crop-canvas"' in page
+    assert 'id="crop-zoom"' in page
+    script = TestClient(app).get("/static/app.js").text
+    for hook in ("openCropTool", "setCropZoom", "toDataURL('image/png')"):
+        assert hook in script, f"app.js does not wire {hook}"
+
+
 def _area_ids(plant_name: str) -> list[int]:
     return [row["id"] for row in app_storage.list_areas() if row["plant_name"] == plant_name]
 
