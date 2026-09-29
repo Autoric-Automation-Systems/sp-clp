@@ -15,6 +15,7 @@ const settingsLocked = document.querySelector('#settings-locked');
 const settingsContent = document.querySelector('#settings-content');
 const logoutButton = document.querySelector('#logout-button');
 const lockedMessage = document.querySelector('#locked-message');
+const toTop = document.querySelector('#to-top');
 const machineForm = document.querySelector('#machine-form');
 const menu = document.querySelector('#main-menu');
 const menuBackdrop = document.querySelector('#menu-backdrop');
@@ -485,6 +486,10 @@ function navigate(path, options) {
   if (path !== currentPath()) history.pushState({}, '', path);
   setMenu(false);
   applyRoute(options);
+  // Every page starts at the top. The plant and help pages are long, so keeping
+  // the offset of the previous one drops the reader in the middle of the next.
+  window.scrollTo({top: 0});
+  updateToTop();
 }
 
 function machineListItem(machine) {
@@ -1195,6 +1200,17 @@ function closeSignalLabels() {
 
 document.querySelector('#signals-close').onclick = closeSignalLabels;
 document.querySelector('#signals-cancel').onclick = closeSignalLabels;
+
+// The help page is nine topics and a plant page grows with every machine, so a way
+// back to the top is worth a button. It only shows once there is something to go
+// back from, so short pages never carry it.
+const TO_TOP_AFTER_PX = 400;
+function updateToTop() {
+  toTop.hidden = window.scrollY < TO_TOP_AFTER_PX;
+}
+toTop.onclick = function () { window.scrollTo({top: 0, behavior: 'smooth'}); };
+window.addEventListener('scroll', updateToTop, {passive: true});
+updateToTop();
 
 // Links rendered by this file carry data-route, so they stay inside the app.
 window.addEventListener('popstate', function () { applyRoute(); });

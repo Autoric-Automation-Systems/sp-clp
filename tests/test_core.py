@@ -1811,6 +1811,26 @@ def test_the_help_summary_is_not_squeezed_by_the_menu_nav_rule():
     assert ".doc-summary ul{display:grid" in css
 
 
+def test_there_is_a_floating_button_to_return_to_the_top():
+    page = TestClient(app).get("/").text
+    assert 'id="to-top"' in page
+    assert 'data-icon="chevron-up"' in page
+    css = TestClient(app).get("/static/styles.css").text
+    assert ".to-top{position:fixed" in css
+    # display:grid beats the hidden attribute unless a rule says otherwise.
+    assert ".to-top[hidden]{display:none}" in css
+    script = TestClient(app).get("/static/app.js").text
+    assert "'#to-top'" in script
+    assert "updateToTop" in script
+
+
+def test_changing_page_returns_to_the_top():
+    script = TestClient(app).get("/static/app.js").text
+    # The plant and help pages are long, so keeping the offset of the page being
+    # left drops the reader in the middle of the one being opened.
+    assert "window.scrollTo({top: 0})" in script
+
+
 def test_the_page_does_not_let_phones_inflate_the_text():
     css = TestClient(app).get("/static/styles.css").text
     # Font boosting grows the text on a real phone and pushes the settings buttons
