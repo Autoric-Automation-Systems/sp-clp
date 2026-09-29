@@ -12,7 +12,7 @@ from __future__ import annotations
 import unicodedata
 
 # Menu pages share the same single segment namespace as the plant addresses.
-RESERVED_PAGES = {"Ajuda", "Configuracoes", "Dashboard"}
+RESERVED_PAGES = {"Ajuda", "Configuracoes", "Dashboard", "TVPanel"}
 
 
 def slugify(name: str) -> str:

@@ -756,6 +756,51 @@ def test_the_help_page_says_what_the_panel_keeps():
     assert "mesmo com o navegador fechado" in page
 
 
+def test_the_tv_panel_is_its_own_address():
+    from app.slugs import RESERVED_PAGES, plant_name_error
+
+    # A plant must never answer on the panel's address.
+    assert "TVPanel" in RESERVED_PAGES
+    assert plant_name_error("tvpanel", set()) is not None
+
+    response = TestClient(app).get("/tvpanel")
+    assert response.status_code == 200
+    assert 'id="tv-page"' in response.text
+
+
+def test_the_tv_panel_rotates_and_keeps_a_way_out():
+    page = TestClient(app).get("/").text
+    assert 'id="tv-stage"' in page
+    assert 'id="tv-progress"' in page
+    assert 'id="tv-pause"' in page
+    # A discreet way back to the normal panel.
+    assert 'data-route="/"' in page
+    assert "Sair do modo TV" in page
+    # The developer's mark travels on the band, from the same footer as before.
+    assert 'class="tv-credit"' in page
+    assert "Desenvolvido por" in page
+    assert "logo-dev.png" in page
+
+    script = TestClient(app).get("/static/app.js").text
+    assert "TV_SECONDS = 5" in script
+    assert "function renderTv" in script
+    assert "function startTv" in script
+    assert "function stopTv" in script
+    assert "'#tv-stage'" in script
+    # The rotation stops when the page is left, instead of running in the background.
+    assert "stopTv();" in script
+    # The TV address is not a plant, whatever the machine list says.
+    assert "segment === TV_SEGMENT) return null" in script
+
+    css = TestClient(app).get("/static/styles.css").text
+    assert "body.tv .topbar{display:none}" in css
+    assert "body.tv footer{position:fixed" in css
+    assert "@keyframes tv-progress{" in css
+    # On a wall nobody hovers, so the TV card writes the name of each signal.
+    assert ".tv-state-name{" in css
+    assert ".tv-state.unknown .tv-state-icon{border:3px dashed" in css
+
+
 def test_the_status_endpoint_does_not_write_history():
     """The recorder owns the history, so opening the panel cannot change it."""
     area_id = app_storage.add_area("Planta Leitura", "Area Leitura")

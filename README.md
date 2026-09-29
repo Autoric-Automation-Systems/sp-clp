@@ -199,6 +199,18 @@ RUN      ██████████░░░░░░██████░�
 - `GET /api/machines/{id}/signals-day?day=AAAA-MM-DD` devolve `day`, `today`, `first_day`, `last_day`, `elapsed_seconds`, `day_seconds` e um item por sinal, com `segments` (os trechos, em hora local da máquina), `on_seconds`, `off_seconds`, `unknown_seconds` e as três porcentagens
 - O `COUNTER` fica de fora: é pulso de diagnóstico, e uma barra dele seria ruído
 
+## Modo TV
+
+`/tvpanel` é a tela para deixar num monitor na parede: **uma máquina por vez ocupando a tela inteira**, trocando sozinha a cada **5 segundos**. É a mesma leitura do painel normal, com outra roupa.
+
+- Cada sinal aparece como um círculo grande **com o nome e o estado escritos embaixo**. No card normal isso vive no `title`, que só aparece passando o mouse — e na parede ninguém passa o mouse
+- O cabeçalho sai de cena e o rodapé vira faixa de marca, com o logotipo da Autoric em destaque. É a única página que não mostra o menu
+- Os controles ficam discretos no canto (30% de opacidade, cheios quando o mouse chega): **Pausar** e **Sair do modo TV**. A saída volta para `/` dentro da aplicação, sem recarregar
+- Uma barra fina no topo mostra o tempo até o próximo slide, e para junto com a pausa
+- Com uma máquina só a rotação não existe e o botão de pausa fica desabilitado; sem nenhuma, o painel explica onde cadastrar
+- **Não pede senha**: é leitura, como o resto do painel, e continua funcionando com a sessão de configuração encerrada
+- O endereço é **reservado**: nenhuma planta responde nele, nem uma que se chame `tvpanel`
+
 ## Histórico que o painel grava
 
 Uma thread do próprio servidor lê cada máquina cadastrada a cada **5 segundos**, para o histórico **não depender de um navegador estar aberto**. Antes isso era efeito colateral do `GET /api/machines/{id}/status`, ou seja, fechar o painel parava de gravar; agora o endpoint de status é só leitura e quem grava é o gravador.

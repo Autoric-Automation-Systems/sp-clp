@@ -11,6 +11,7 @@ const plantMachines = document.querySelector('#plant-machines');
 const plantEmpty = document.querySelector('#plant-empty');
 const settingsPage = document.querySelector('#settings-page');
 const helpPage = document.querySelector('#help-page');
+const tvPage = document.querySelector('#tv-page');
 const settingsLocked = document.querySelector('#settings-locked');
 const settingsContent = document.querySelector('#settings-content');
 const logoutButton = document.querySelector('#logout-button');
@@ -25,6 +26,13 @@ let editingAreaId = null;
 let editingLabelsFor = null;
 let editorSignals = [];
 let cachedMachines = [];
+
+// The TV panel shows one machine at a time. Its state lives up here because the
+// routing decides when the rotation runs, and it has to survive a data refresh.
+const TV_SECONDS = 5;
+let tvIndex = 0;
+let tvTimer = null;
+let tvPaused = false;
 let cachedAreas = [];
 let lastItems = [];
 const signalsOpen = new Set();
@@ -317,6 +325,84 @@ function renderPlantPage(plant) {
   bindToggles();
 }
 
+// The TV panel: one machine per slide, whole screen, meant to be read from across
+// the shop floor. The card there carries the name of each signal under the icon,
+// because on a wall nobody hovers to read a tooltip.
+function tvStates(status) {
+  return ['auto', 'run', 'fault', 'safety', 'counter'].map(function (kind) {
+    const item = firstOfKind(status, kind);
+    if (!item) return '';
+    const state = stateOf(item);
+    const unknown = state === 'unknown';
+    const word = unknown ? 'Sem leitura' : stateText(item, state);
+    return `<div class="tv-state ${statusColour(item, state)}${unknown ? ' unknown' : ''}"><span class="tv-state-icon">${icon(signalIcon(item))}</span><span class="tv-state-name">${esc(item.label)}</span><span class="tv-state-word">${esc(word)}</span></div>`;
+  }).join('');
+}
+
+function tvSlide(machine, status) {
+  const online = Boolean(status && status.connected);
+  const count = status && status.count !== null && status.count !== undefined ? status.count : '-';
+  const stamp = status && status.timestamp
+    ? 'Atualizado às ' + new Date(status.timestamp).toLocaleTimeString()
+    : 'Aguardando leitura do CLP';
+  return `<article class="tv-card"><p class="tv-where">${esc(machine.plant_name)} · ${esc(machine.area_name)}</p><h1 class="tv-name">${esc(machine.name)}</h1><p class="tv-meta">${esc(machine.ip)} · DB${esc(machine.db_number)}<span class="tv-link ${online ? 'online' : 'offline'}">${icon(online ? 'wifi' : 'wifi-off')}${online ? 'Online' : 'Offline'}</span></p><div class="tv-states">${tvStates(status)}</div><div class="tv-count"><span>Contador atual</span><b>${esc(count)}</b><small>${esc(stamp)}</small></div></article>`;
+}
+
+function renderTv() {
+  const stage = document.querySelector('#tv-stage');
+  const position = document.querySelector('#tv-position');
+  const pause = document.querySelector('#tv-pause');
+  if (!lastItems.length) {
+    tvIndex = 0;
+    stage.innerHTML = '<p class="tv-empty">Nenhuma máquina cadastrada.<br><span>Cadastre uma máquina em <a href="/Configuracoes" data-route="/Configuracoes">Configurações</a> para o painel começar a monitorar.</span></p>';
+    position.textContent = '';
+    pause.disabled = true;
+    return;
+  }
+  if (tvIndex >= lastItems.length) tvIndex = 0;
+  const entry = lastItems[tvIndex];
+  stage.innerHTML = tvSlide(entry[0], entry[1]);
+  position.textContent = (tvIndex + 1) + ' / ' + lastItems.length;
+  // One machine is not a rotation, so the control has nothing to do.
+  pause.disabled = lastItems.length < 2;
+}
+
+function restartTvProgress() {
+  const bar = document.querySelector('#tv-progress');
+  // Clearing the animation and reading the width puts the bar back to the start.
+  bar.style.animation = 'none';
+  void bar.offsetWidth;
+  bar.style.animation = '';
+}
+
+function startTv() {
+  if (tvTimer || tvPaused || lastItems.length < 2) return;
+  tvTimer = setInterval(function () {
+    tvIndex += 1;
+    renderTv();
+    restartTvProgress();
+  }, TV_SECONDS * 1000);
+}
+
+function stopTv() {
+  if (tvTimer) {
+    clearInterval(tvTimer);
+    tvTimer = null;
+  }
+}
+
+function toggleTvPause() {
+  tvPaused = !tvPaused;
+  document.body.classList.toggle('tv-paused', tvPaused);
+  document.querySelector('#tv-pause').textContent = tvPaused ? 'Retomar' : 'Pausar';
+  if (tvPaused) {
+    stopTv();
+    return;
+  }
+  restartTvProgress();
+  startTv();
+}
+
 // Every caller repaints "the current page", so the plant route is handled here.
 function renderCards() {
   const plant = currentPlant();
@@ -555,6 +641,7 @@ function setMenu(open) {
 // Routing. Every plant answers on its own address, so the path decides the page.
 const SETTINGS_SEGMENT = 'configuracoes';
 const HELP_SEGMENT = 'ajuda';
+const TV_SEGMENT = 'tvpanel';
 
 function decodeSegment(pathname) {
   return decodeURIComponent(pathname.replace(/^\/+|\/+$/g, '')).toLowerCase();
@@ -567,15 +654,18 @@ function currentPath() {
 function currentPlant() {
   const segment = decodeSegment(location.pathname);
   if (!segment || segment === SETTINGS_SEGMENT || segment === HELP_SEGMENT) return null;
+  if (segment === TV_SEGMENT) return null;
   const machine = cachedMachines.find(function (item) {
     return String(item.plant_slug || '').toLowerCase() === segment;
   });
   return machine ? {name: machine.plant_name, slug: machine.plant_slug} : null;
 }
 
-function routeTitle(settings, help) {
+function routeTitle(settings, help, tv) {
   if (settings) return '/Configuracoes';
   if (help) return '/Ajuda';
+  // The TV panel has no button in the menu, so nothing lights up while it runs.
+  if (tv) return '/TVPanel';
   return '/';
 }
 
@@ -583,20 +673,39 @@ function applyRoute(options) {
   const segment = decodeSegment(location.pathname);
   const settings = segment === SETTINGS_SEGMENT;
   const help = segment === HELP_SEGMENT;
-  const plant = settings || help ? null : currentPlant();
-  const dashboard = !settings && !help && !plant;
+  const tv = segment === TV_SEGMENT;
+  const plant = settings || help || tv ? null : currentPlant();
+  const dashboard = !settings && !help && !tv && !plant;
 
   dashboardPage.hidden = !dashboard;
   plantPage.hidden = !plant;
   settingsPage.hidden = !settings;
   helpPage.hidden = !help;
+  tvPage.hidden = !tv;
+  // The panel drops the header and turns the footer into the brand band, which
+  // leaves the whole screen to the machine on show.
+  const entering = tv && !document.body.classList.contains('tv');
+  document.body.classList.toggle('tv', tv);
+  if (tv) document.body.style.setProperty('--tv-seconds', TV_SECONDS + 's');
 
-  const active = routeTitle(settings, help);
+  const active = routeTitle(settings, help, tv);
   document.querySelectorAll('.nav-button').forEach(function (button) {
     button.classList.toggle('active', button.dataset.route === active);
   });
 
+  if (tv && entering) {
+    tvIndex = 0;
+    tvPaused = false;
+    document.body.classList.remove('tv-paused');
+    document.querySelector('#tv-pause').textContent = 'Pausar';
+  }
   renderCards();
+  if (tv) {
+    renderTv();
+    startTv();
+  } else {
+    stopTv();
+  }
   if (settings && options && options.settings) loadSettings();
 }
 
@@ -855,6 +964,8 @@ for (const id of ['trend-close', 'trend-close-action']) {
 }
 document.querySelector('#trend-prev').onclick = function () { stepTrend(-1); };
 document.querySelector('#trend-next').onclick = function () { stepTrend(1); };
+
+document.querySelector('#tv-pause').onclick = toggleTvPause;
 
 document.querySelector('#branding-form').onsubmit = async function (event) {
   event.preventDefault();
