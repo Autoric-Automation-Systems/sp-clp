@@ -801,6 +801,49 @@ def test_the_tv_panel_rotates_and_keeps_a_way_out():
     assert ".tv-state.unknown .tv-state-icon{border:3px dashed" in css
 
 
+def test_the_tv_controls_are_a_videocassette_deck():
+    """The operator already knows a cassette deck: back, pause, play, forward."""
+    page = TestClient(app).get("/").text
+    for button in ("tv-back", "tv-pause", "tv-play", "tv-forward"):
+        assert f'id="{button}"' in page
+    # Order on screen is the order of the tape, not the order of the code.
+    assert page.index('id="tv-back"') < page.index('id="tv-pause"') < page.index('id="tv-play"') < page.index('id="tv-forward"')
+
+    icons = TestClient(app).get("/static/icons.js").text
+    for glyph in ("skip-back", "pause", "skip-forward"):
+        assert f'"{glyph}":' in icons
+    assert 'data-icon="skip-back"' in page
+    assert 'data-icon="pause"' in page
+    assert 'data-icon="skip-forward"' in page
+
+    script = TestClient(app).get("/static/app.js").text
+    assert "function tvStep" in script
+    assert "function tvButtons" in script
+    assert "function tvSetPaused" in script
+    # Backward from the first slide wraps to the last one, like a ring.
+    assert "% tvItems.length" in script or "% lastItems.length" in script
+    # The deck follows the state: running shows pause, paused shows play.
+    assert "'#tv-pause'" in script
+    assert "'#tv-play'" in script
+    # Arriving at the TV address always starts playing, even after a pause.
+    assert "tvSetPaused(false)" in script
+
+
+def test_the_tv_card_fits_a_short_screen():
+    """A centred card overflows upwards, and that is what hid the plant name.
+
+    Every size of the card also watches the height of the screen, so a notebook
+    with the browser open shrinks the card instead of pushing it off the top.
+    """
+    css = TestClient(app).get("/static/styles.css").text
+    assert "height:calc(100vh - var(--tv-band))" in css
+    assert "padding:clamp(18px,5vh,64px) 5vw clamp(12px,3vh,40px)" in css
+    assert "font:700 clamp(30px,min(6.4vw,8vh),110px)/1.02" in css
+    assert "gap:clamp(10px,2.4vh,34px)" in css
+    assert "width:clamp(46px,min(6.4vw,8.5vh),140px)" in css
+    assert "font:700 clamp(36px,min(8.5vw,11vh),160px)/1" in css
+
+
 def test_the_status_endpoint_does_not_write_history():
     """The recorder owns the history, so opening the panel cannot change it."""
     area_id = app_storage.add_area("Planta Leitura", "Area Leitura")

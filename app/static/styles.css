@@ -23,26 +23,34 @@ body.tv .tv-position{display:inline-block;min-width:74px;text-align:right;color:
 body.tv .tv-progress{animation:tv-progress var(--tv-seconds,5s) linear forwards}
 body.tv-paused .tv-progress{animation-play-state:paused}
 @keyframes tv-progress{from{transform:scaleX(0)}to{transform:scaleX(1)}}
-.tv-controls{position:fixed;z-index:30;top:20px;right:20px;display:flex;gap:10px;opacity:.3;transition:opacity .2s ease}
+.tv-controls{position:fixed;z-index:30;top:20px;right:20px;display:flex;align-items:center;gap:10px;opacity:.45;transition:opacity .2s ease}
 .tv-controls:hover,.tv-controls:focus-within{opacity:1}
-.tv-control{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border:1px solid #25506a;border-radius:999px;background:#0b2130cc;color:#cfe3ee;font:700 13px var(--sans);text-decoration:none;cursor:pointer}
+.tv-control{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:48px;height:48px;padding:0;border:1px solid #25506a;border-radius:50%;background:#0b2130cc;color:#cfe3ee;font:700 13px var(--sans);text-decoration:none;cursor:pointer}
+.tv-control .icon{width:22px;height:22px}
 .tv-control:hover,.tv-control:focus-visible{background:#123449;border-color:#4a86ad;color:#fff}
-.tv-control:disabled{opacity:.4;cursor:default}
-.tv-stage{display:flex;align-items:center;justify-content:center;height:calc(100vh - var(--tv-band));padding:4vh 5vw}
-.tv-card{display:grid;gap:2.6vh;justify-items:center;width:100%;max-width:1500px;text-align:center}
+.tv-control:disabled{opacity:.3;cursor:default}
+.tv-control:disabled:hover{background:#0b2130cc;border-color:#25506a;color:#cfe3ee}
+.tv-exit{width:auto;padding:0 18px;border-radius:999px}
+/* A pausa fica visível na barra do topo, que para e muda de cor. */
+body.tv-paused .tv-progress{background:#ffb703}
+.tv-stage{display:flex;align-items:center;justify-content:center;height:calc(100vh - var(--tv-band));padding:clamp(18px,5vh,64px) 5vw clamp(12px,3vh,40px)}
+.tv-card{display:grid;gap:clamp(10px,2.4vh,34px);justify-items:center;width:100%;max-width:1500px;text-align:center}
 .tv-where{color:#5fc8de;font:700 clamp(13px,1.5vw,22px) var(--sans);letter-spacing:.2em;text-transform:uppercase}
-.tv-name{color:#fff;font:700 clamp(34px,6.4vw,110px)/1.02 var(--serif)}
-.tv-meta{display:flex;align-items:center;gap:18px;color:#9fc3d6;font:clamp(12px,1.2vw,19px) "Courier New",Courier,monospace}
-.tv-link{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border:1px solid #25506a;border-radius:999px;font:700 clamp(11px,1vw,17px) var(--sans)}
+/* Cada medida olha tambem para a altura: numa tela curta (a do notebook, com o
+   navegador aberto) o card encolhe em vez de transbordar pelo topo, que era o que
+   escondia o nome da planta. */
+.tv-name{color:#fff;font:700 clamp(30px,min(6.4vw,8vh),110px)/1.02 var(--serif)}
+.tv-meta{display:flex;align-items:center;gap:18px;color:#9fc3d6;font:clamp(12px,min(1.2vw,1.6vh),19px) "Courier New",Courier,monospace}
+.tv-link{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border:1px solid #25506a;border-radius:999px;font:700 clamp(11px,min(1vw,1.4vh),17px) var(--sans)}
 .tv-link .icon{width:1em;height:1em}
 .tv-link.online{color:#6fe3b4;border-color:#2f7f66}
 .tv-link.offline{color:#ff9f96;border-color:#8a4a48}
 .tv-states{display:grid;grid-template-columns:repeat(5,1fr);gap:clamp(8px,1.6vw,34px);width:100%}
-.tv-state{--tv-state:#9fb8c8;--tv-bg:#16354a;display:grid;gap:12px;justify-items:center}
-.tv-state-icon{display:grid;place-items:center;width:clamp(56px,6.4vw,140px);height:clamp(56px,6.4vw,140px);border-radius:50%;background:var(--tv-bg);color:var(--tv-state)}
+.tv-state{--tv-state:#9fb8c8;--tv-bg:#16354a;display:grid;gap:clamp(6px,1.2vh,14px);justify-items:center}
+.tv-state-icon{display:grid;place-items:center;width:clamp(46px,min(6.4vw,8.5vh),140px);height:clamp(46px,min(6.4vw,8.5vh),140px);border-radius:50%;background:var(--tv-bg);color:var(--tv-state)}
 .tv-state-icon .icon{width:58%;height:58%}
-.tv-state-name{color:#dcebf4;font:700 clamp(12px,1.15vw,21px) var(--sans);letter-spacing:.04em}
-.tv-state-word{color:var(--tv-state);font:700 clamp(11px,1.05vw,18px) var(--sans)}
+.tv-state-name{color:#dcebf4;font:700 clamp(12px,min(1.15vw,1.5vh),21px) var(--sans);letter-spacing:.04em}
+.tv-state-word{color:var(--tv-state);font:700 clamp(11px,min(1.05vw,1.4vh),18px) var(--sans)}
 .tv-state.on-blue{--tv-state:#6fb7f5;--tv-bg:#123550}
 .tv-state.on-green{--tv-state:#54d68d;--tv-bg:#103a2c}
 .tv-state.on-red{--tv-state:#ff8b80;--tv-bg:#47201e}
@@ -51,7 +59,7 @@ body.tv-paused .tv-progress{animation-play-state:paused}
 .tv-state.unknown .tv-state-icon{border:3px dashed var(--tv-state)}
 .tv-count{display:grid;gap:8px;justify-items:center}
 .tv-count span{color:#5fc8de;font:700 clamp(11px,1.05vw,18px) var(--sans);letter-spacing:.2em;text-transform:uppercase}
-.tv-count b{color:#fff;font:700 clamp(44px,8.5vw,160px)/1 var(--sans);font-variant-numeric:tabular-nums}
+.tv-count b{color:#fff;font:700 clamp(36px,min(8.5vw,11vh),160px)/1 var(--sans);font-variant-numeric:tabular-nums}
 .tv-count small{color:#7f95a6;font:clamp(11px,1vw,16px) var(--sans)}
 .tv-empty{color:#9fc3d6;font:clamp(17px,2vw,32px)/1.7 var(--sans);text-align:center}
 .tv-empty span{color:#7f95a6;font-size:.72em}
