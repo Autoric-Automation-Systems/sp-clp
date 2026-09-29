@@ -33,6 +33,7 @@ ICONS = (
     "x",
     "lock",
     "log-in",
+    "log-out",
     "refresh-cw",
     "chevron-down",
     "chevron-up",

@@ -13,6 +13,8 @@ const settingsPage = document.querySelector('#settings-page');
 const helpPage = document.querySelector('#help-page');
 const settingsLocked = document.querySelector('#settings-locked');
 const settingsContent = document.querySelector('#settings-content');
+const logoutButton = document.querySelector('#logout-button');
+const lockedMessage = document.querySelector('#locked-message');
 const machineForm = document.querySelector('#machine-form');
 const menu = document.querySelector('#main-menu');
 const menuBackdrop = document.querySelector('#menu-backdrop');
@@ -33,7 +35,49 @@ hydrateIcons();
 async function request(url, options = {}) {
   const headers = {...(options.headers || {})};
   if (token) headers.Authorization = `Bearer ${token}`;
-  return fetch(url, {...options, headers});
+  const response = await fetch(url, {...options, headers});
+  // The server ends a session that has been idle, so a refused token means this
+  // panel is no longer authorised even though the browser still holds one.
+  if (response.status === 401 && token) {
+    endUserSession('Sua sessão expirou. Entre de novo para configurar.');
+  }
+  return response;
+}
+
+// The panel sits on a wall and gets left alone, so the session ends by itself.
+const IDLE_LOGOUT_MS = 5 * 60 * 1000;
+let idleTimer = null;
+
+function armIdleLogout() {
+  clearTimeout(idleTimer);
+  if (!token) return;
+  idleTimer = setTimeout(function () {
+    endUserSession('Sessão encerrada após 5 minutos sem uso.');
+  }, IDLE_LOGOUT_MS);
+}
+
+function startUserSession(newToken) {
+  token = newToken;
+  sessionState.textContent = 'Logado - configuração autorizada';
+  sessionState.classList.add('authenticated');
+  logoutButton.hidden = false;
+  armIdleLogout();
+}
+
+function endUserSession(reason) {
+  const current = token;
+  token = null;
+  clearTimeout(idleTimer);
+  logoutButton.hidden = true;
+  sessionState.textContent = 'Visitante';
+  sessionState.classList.remove('authenticated');
+  settingsLocked.hidden = false;
+  settingsContent.hidden = true;
+  lockedMessage.textContent = reason || 'Faça login para alterar configurações.';
+  document.querySelector('#login-password').value = '';
+  if (!current) return;
+  // Tell the server too, so the token does not stay valid here.
+  fetch('/api/auth/logout', {method: 'POST', headers: {Authorization: 'Bearer ' + current}}).catch(function () {});
 }
 
 function esc(value) {
@@ -925,6 +969,15 @@ document.querySelectorAll('.nav-button').forEach(function (button) {
   button.onclick = function () { navigate(button.dataset.route, {settings: true}); };
 });
 document.querySelector('#login-open-button').onclick = openLogin;
+document.querySelector('#logout-button').onclick = function () {
+  setMenu(false);
+  endUserSession('Sessão encerrada. Entre de novo para configurar.');
+};
+// Any real interaction restarts the clock; the polling that refreshes the card
+// every 5 s does not, or the session would never end on its own.
+['pointerdown', 'keydown'].forEach(function (name) {
+  document.addEventListener(name, function () { if (token) armIdleLogout(); }, true);
+});
 document.querySelector('#machine-cancel').onclick = cancelEdit;
 document.querySelector('#machine-probe').onclick = scanMachine;
 // The result belongs to the address that was swept, so editing the address clears
@@ -941,9 +994,7 @@ document.querySelector('#login-button').onclick = async function () {
   const password = document.querySelector('#login-password').value;
   const response = await request('/api/auth/login', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: password})});
   if (response.ok) {
-    token = (await response.json()).token;
-    sessionState.textContent = 'Logado - configuração autorizada';
-    sessionState.classList.add('authenticated');
+    startUserSession((await response.json()).token);
     dialog.close();
     if (!settingsPage.hidden) loadSettings();
   } else {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -65,7 +66,6 @@ BASE_DIR = Path(__file__).resolve().parent
 app = FastAPI(title="SP-CLP Dashboard", version="0.1.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 storage = Storage()
-sessions: set[str] = set()
 plc_clients: dict[tuple[str, int, int], PLCClient] = {}
 logger = logging.getLogger("sp_clp")
 
@@ -73,10 +73,34 @@ logger = logging.getLogger("sp_clp")
 MACHINE_NOT_FOUND = "Máquina não encontrada"
 AREA_NOT_FOUND = "Área não encontrada"
 
+# A session ends by itself after this long without an authenticated request, so a
+# panel left logged in overnight is not still open for whoever walks past in the
+# morning. Any authenticated request pushes the deadline away.
+SESSION_IDLE_SECONDS = 300.0
+
+# token -> monotonic instant of the last authenticated request that carried it
+sessions: dict[str, float] = {}
+
+
+def start_session(token: str) -> str:
+    sessions[token] = time.monotonic()
+    return token
+
+
+def end_session(token: str) -> None:
+    sessions.pop(token, None)
+
 
 def require_admin(authorization: str | None = Header(default=None)) -> None:
-    if not authorization or not authorization.startswith("Bearer ") or authorization[7:] not in sessions:
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Autenticação necessária")
+    token = authorization[7:]
+    last_seen = sessions.get(token)
+    if last_seen is None or time.monotonic() - last_seen > SESSION_IDLE_SECONDS:
+        # An expired token never comes back, not even if the window is widened later.
+        sessions.pop(token, None)
+        raise HTTPException(status_code=401, detail="Autenticação necessária")
+    sessions[token] = time.monotonic()
 
 
 def client_for(machine) -> PLCClient:
@@ -245,9 +269,18 @@ def login(payload: LoginRequest) -> dict[str, str]:
     encoded = storage.get_setting("password_hash")
     if not encoded or not verify_password(payload.password, encoded):
         raise HTTPException(status_code=401, detail="Senha inválida")
-    token = secrets.token_urlsafe(32)
-    sessions.add(token)
-    return {"token": token}
+    return {"token": start_session(secrets.token_urlsafe(32))}
+
+
+@app.post("/api/auth/logout", status_code=204)
+def logout(authorization: str | None = Header(default=None)) -> None:
+    """Drop the token that was presented.
+
+    Idempotent and it never demands a valid token: ending a session already gone is
+    the normal case when the idle deadline fired first, and it must not be an error.
+    """
+    if authorization and authorization.startswith("Bearer "):
+        end_session(authorization[7:])
 
 
 def _other_plant_names(plant_name: str) -> set[str]:

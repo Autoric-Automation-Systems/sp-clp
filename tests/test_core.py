@@ -1,8 +1,10 @@
 import logging
 import re
+import time
 from datetime import datetime, timezone
 
 import pytest
+from app import main as main_module
 from app.branding import remove_logos
 from app.models import MachineInput
 from app.plc import (
@@ -30,7 +32,7 @@ from app.storage import Storage
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.main import app, storage as app_storage
+from app.main import app, end_session, start_session, storage as app_storage
 
 
 def test_parse_standard_layout():
@@ -533,14 +535,12 @@ def test_signal_label_endpoints_require_authentication():
 
 
 def test_signal_labels_round_trip_through_the_api():
-    from app.main import sessions
-
     client = TestClient(app)
     area_id = app_storage.add_area("Test Plant", "API Labels Area")
     machine_id = app_storage.add_machine(area_id, "API Labels", "fake", 53, "UTC")
     token = "test-token-signal-labels"
     headers = {"Authorization": f"Bearer {token}"}
-    sessions.add(token)
+    start_session(token)
     try:
         response = client.get(f"/api/config/machines/{machine_id}/signals", headers=headers)
         assert response.status_code == 200
@@ -590,17 +590,15 @@ def test_signal_labels_round_trip_through_the_api():
         )
         assert response.status_code == 422
     finally:
-        sessions.discard(token)
+        end_session(token)
         app_storage.delete_machine(machine_id)
 
 
 def test_signal_labels_for_unknown_machine_are_rejected():
-    from app.main import sessions
-
     client = TestClient(app)
     token = "test-token-signal-labels-missing"
     headers = {"Authorization": f"Bearer {token}"}
-    sessions.add(token)
+    start_session(token)
     try:
         missing_id = 999_999
         assert app_storage.get_machine(missing_id) is None
@@ -612,13 +610,11 @@ def test_signal_labels_for_unknown_machine_are_rejected():
         )
         assert response.status_code == 404
     finally:
-        sessions.discard(token)
+        end_session(token)
 
 
 def _admin_client(token: str) -> TestClient:
-    from app.main import sessions
-
-    sessions.add(token)
+    start_session(token)
     return TestClient(app)
 
 
@@ -628,7 +624,7 @@ def _temp_machine(name: str = "Signals") -> int:
 
 
 def test_locked_signals_cannot_be_renamed_through_the_api():
-    from app.main import describe_machine_signals, sessions
+    from app.main import describe_machine_signals
 
     client = _admin_client("test-token-locked")
     machine_id = _temp_machine()
@@ -646,13 +642,11 @@ def test_locked_signals_cannot_be_renamed_through_the_api():
         assert labels["0.2"] == "Falha"
         assert labels["0.3"] == "Segurança"
     finally:
-        sessions.discard("test-token-locked")
+        end_session("test-token-locked")
         app_storage.delete_machine(machine_id)
 
 
 def test_duplicate_signal_labels_are_rejected_through_the_api():
-    from app.main import sessions
-
     client = _admin_client("test-token-duplicates")
     machine_id = _temp_machine()
     headers = {"Authorization": "Bearer test-token-duplicates"}
@@ -720,13 +714,11 @@ def test_duplicate_signal_labels_are_rejected_through_the_api():
             "0.6": "Portao de saida",
         }
     finally:
-        sessions.discard("test-token-duplicates")
+        end_session("test-token-duplicates")
         app_storage.delete_machine(machine_id)
 
 
 def test_the_three_integers_can_be_renamed_through_the_api():
-    from app.main import sessions
-
     client = _admin_client("test-token-integers")
     machine_id = _temp_machine()
     headers = {"Authorization": "Bearer test-token-integers"}
@@ -754,12 +746,12 @@ def test_the_three_integers_can_be_renamed_through_the_api():
             "10.0": "Temperatura",
         }
     finally:
-        sessions.discard("test-token-integers")
+        end_session("test-token-integers")
         app_storage.delete_machine(machine_id)
 
 
 def test_the_counter_cannot_be_renamed_through_the_api():
-    from app.main import describe_machine_signals, sessions
+    from app.main import describe_machine_signals
 
     client = _admin_client("test-token-counter")
     machine_id = _temp_machine()
@@ -777,7 +769,7 @@ def test_the_counter_cannot_be_renamed_through_the_api():
         assert by_address["0.4"].label == "Contador"
         assert by_address["0.4"].editable is False
     finally:
-        sessions.discard("test-token-counter")
+        end_session("test-token-counter")
         app_storage.delete_machine(machine_id)
 
 
@@ -941,9 +933,7 @@ def test_company_name_and_logo_round_trip():
         assert client.get("/api/branding").json()["logo_url"] is None
         assert client.get("/api/branding/logo").status_code == 404
     finally:
-        from app.main import sessions
-
-        sessions.discard("test-token-branding")
+        end_session("test-token-branding")
         app_storage.set_setting(COMPANY_NAME_KEY, "SP-CLP")
         # The logo file lives next to the test database; clear both the pointer
         # and the file so later tests see the shipped default again.
@@ -985,9 +975,7 @@ def test_branding_logo_must_be_an_image():
         assert response.status_code == 422
         assert "limite" in response.json()["detail"]
     finally:
-        from app.main import sessions
-
-        sessions.discard("test-token-branding-bad")
+        end_session("test-token-branding-bad")
 
 
 def test_dashboard_header_carries_the_branding():
@@ -1188,9 +1176,7 @@ def test_an_area_can_be_edited():
         assert area["plant_name"] == "Planta Editavel"
     finally:
         app_storage.delete_area(area_id)
-        from app.main import sessions
-
-        sessions.discard("test-token-area-edit")
+        end_session("test-token-area-edit")
 
 
 def test_editing_an_area_cannot_rename_the_plant():
@@ -1208,9 +1194,7 @@ def test_editing_an_area_cannot_rename_the_plant():
         assert app_storage.get_area(area_id)["plant_name"] == "Planta Fixa"
     finally:
         app_storage.delete_area(area_id)
-        from app.main import sessions
-
-        sessions.discard("test-token-area-plant")
+        end_session("test-token-area-plant")
 
 
 def test_area_with_machines_cannot_be_deleted():
@@ -1232,9 +1216,7 @@ def test_area_with_machines_cannot_be_deleted():
     finally:
         app_storage.delete_machine(machine_id)
         app_storage.delete_area(area_id)
-        from app.main import sessions
-
-        sessions.discard("test-token-area-delete")
+        end_session("test-token-area-delete")
 
 
 def test_renaming_a_plant_moves_every_area_and_its_address():
@@ -1260,9 +1242,7 @@ def test_renaming_a_plant_moves_every_area_and_its_address():
     finally:
         app_storage.delete_area(first)
         app_storage.delete_area(second)
-        from app.main import sessions
-
-        sessions.discard("test-token-plant-rename")
+        end_session("test-token-plant-rename")
 
 
 def test_plant_names_must_own_a_usable_address():
@@ -1309,9 +1289,7 @@ def test_plant_names_must_own_a_usable_address():
     finally:
         for area_id in areas:
             app_storage.delete_area(area_id)
-        from app.main import sessions
-
-        sessions.discard("test-token-plant-clash")
+        end_session("test-token-plant-clash")
 
 
 def test_renaming_a_plant_to_the_same_address_is_still_allowed():
@@ -1330,9 +1308,7 @@ def test_renaming_a_plant_to_the_same_address_is_still_allowed():
         assert client.get("/Rio-Verde").status_code == 200
     finally:
         app_storage.delete_area(area_id)
-        from app.main import sessions
-
-        sessions.discard("test-token-plant-case")
+        end_session("test-token-plant-case")
 
 
 def test_layout_matches_the_customer_db():
@@ -1510,9 +1486,7 @@ def test_scan_endpoint_lists_the_simulated_database():
         assert body["databases"] == [1]
         assert body["truncated"] is False
     finally:
-        from app.main import sessions
-
-        sessions.discard("test-token-scan")
+        end_session("test-token-scan")
 
 
 def test_scan_endpoint_honours_a_narrow_range():
@@ -1527,9 +1501,7 @@ def test_scan_endpoint_honours_a_narrow_range():
         assert response.json()["databases"] == []
         assert response.json()["scanned"] == 1
     finally:
-        from app.main import sessions
-
-        sessions.discard("test-token-scan-range")
+        end_session("test-token-scan-range")
 
 
 def test_scan_endpoint_rejects_a_blank_address():
@@ -1542,9 +1514,7 @@ def test_scan_endpoint_rejects_a_blank_address():
         )
         assert response.status_code == 422
     finally:
-        from app.main import sessions
-
-        sessions.discard("test-token-scan-blank")
+        end_session("test-token-scan-blank")
 
 
 def test_scan_endpoint_rejects_an_unusable_range():
@@ -1563,9 +1533,7 @@ def test_scan_endpoint_rejects_an_unusable_range():
         )
         assert too_wide.status_code == 422
     finally:
-        from app.main import sessions
-
-        sessions.discard("test-token-scan-bad-range")
+        end_session("test-token-scan-bad-range")
 
 
 def test_the_counter_bit_has_a_status_block_of_its_own():
@@ -1742,3 +1710,127 @@ def test_help_page_lists_the_library_files():
     assert 'id="library-files"' in page
     # The rows are built in app.js, so the list must wait for the endpoint.
     assert "loadLibrary" in TestClient(app).get("/static/app.js").text
+
+
+# --- sessoes: logout e expiracao por inatividade -------------------------------
+
+CONFIG_AREAS = "/api/config/areas"
+
+
+@pytest.fixture
+def admin_password():
+    """Seed a known password so a test can log in over HTTP, then put the store back."""
+    encoded = app_storage.get_setting("password_hash")
+    app_storage.set_setting("password_hash", hash_password("senha-de-teste"))
+    try:
+        yield "senha-de-teste"
+    finally:
+        if encoded is None:
+            with app_storage.connect() as connection:
+                connection.execute("DELETE FROM settings WHERE key = ?", ("password_hash",))
+        else:
+            app_storage.set_setting("password_hash", encoded)
+
+
+def _login(client: TestClient, password: str) -> str:
+    response = client.post("/api/auth/login", json={"password": password})
+    assert response.status_code == 200, response.text
+    token = response.json()["token"]
+    assert token
+    return token
+
+
+def test_login_opens_a_session_that_reaches_a_config_endpoint(admin_password):
+    client = TestClient(app)
+    token = _login(client, admin_password)
+    try:
+        headers = {"Authorization": f"Bearer {token}"}
+        assert client.get(CONFIG_AREAS, headers=headers).status_code == 200
+    finally:
+        end_session(token)
+
+
+def test_login_with_the_wrong_password_opens_nothing(admin_password):
+    client = TestClient(app)
+    response = client.post("/api/auth/login", json={"password": "errada"})
+    assert response.status_code == 401
+    assert "token" not in response.text
+
+
+def test_logout_ends_the_session_it_was_given(admin_password):
+    client = TestClient(app)
+    token = _login(client, admin_password)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get(CONFIG_AREAS, headers=headers).status_code == 200
+
+    assert client.post("/api/auth/logout", headers=headers).status_code == 204
+
+    # The token is dropped, not merely marked as logged out.
+    assert client.get(CONFIG_AREAS, headers=headers).status_code == 401
+
+
+def test_logout_is_harmless_without_a_valid_token():
+    """Ending a session that is already gone is normal: the idle deadline fires first."""
+    client = TestClient(app)
+    assert client.post("/api/auth/logout").status_code == 204
+    assert client.post(
+        "/api/auth/logout", headers={"Authorization": "Bearer nao-existe"}
+    ).status_code == 204
+    assert client.post(
+        "/api/auth/logout", headers={"Authorization": "sem-bearer"}
+    ).status_code == 204
+
+
+def test_session_dies_by_itself_after_the_idle_window(monkeypatch):
+    client = TestClient(app)
+    token = start_session("test-token-idle")
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        assert client.get(CONFIG_AREAS, headers=headers).status_code == 200
+        # A negative window is already over the moment the session is checked.
+        monkeypatch.setattr(main_module, "SESSION_IDLE_SECONDS", -1.0)
+        assert client.get(CONFIG_AREAS, headers=headers).status_code == 401
+        # Widening the window afterwards must not revive the token.
+        monkeypatch.setattr(main_module, "SESSION_IDLE_SECONDS", 300.0)
+        assert client.get(CONFIG_AREAS, headers=headers).status_code == 401
+        assert token not in main_module.sessions
+    finally:
+        end_session(token)
+
+
+def test_an_authenticated_request_pushes_the_idle_deadline(monkeypatch):
+    client = TestClient(app)
+    token = start_session("test-token-idle-refresh")
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        monkeypatch.setattr(main_module, "SESSION_IDLE_SECONDS", 10.0)
+        # Nine of the ten seconds are already spent when the request arrives.
+        main_module.sessions[token] = time.monotonic() - 9.0
+        assert client.get(CONFIG_AREAS, headers=headers).status_code == 200
+        # The request reset the clock instead of leaving it one second from death.
+        assert time.monotonic() - main_module.sessions[token] < 1.0
+    finally:
+        end_session(token)
+
+
+def test_the_menu_offers_a_logout_button_that_waits_for_a_session():
+    page = TestClient(app).get("/").text
+    assert re.search(r'id="logout-button"[^>]*\bhidden\b', page), (
+        "o botao Sair precisa comecar escondido"
+    )
+    assert 'data-icon="log-out"' in page
+
+
+def test_the_script_ends_the_session_on_logout_and_after_five_idle_minutes():
+    script = TestClient(app).get("/static/app.js").text
+    assert "IDLE_LOGOUT_MS = 5 * 60 * 1000" in script
+    assert "/api/auth/logout" in script
+    assert "startUserSession" in script and "endUserSession" in script
+    assert "logoutButton.hidden = false" in script
+    assert "logoutButton.hidden = true" in script
+    # A refused token means the server already ended the session, so the panel has to
+    # drop it too instead of looking logged in.
+    assert "response.status === 401 && token" in script
+    # Only starting a session and real user input may re-arm the timer. The 5 s
+    # refresh is not activity, or a wall panel would never log out.
+    assert len(re.findall(r"\barmIdleLogout\(\)", script)) == 3
