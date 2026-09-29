@@ -1027,6 +1027,10 @@ def test_help_page_explains_the_network():
     assert "Infraestrutura de rede" in page
     assert "Porta 102" in page
     assert 'id="access-addresses"' in page
+    # The customer asks about the phone next, so the page answers it where the
+    # addresses are: the IP works, the machine name usually does not.
+    assert "No celular ou tablet" in page
+    assert "mesma rede" in page
     # The list is filled from /api/access, so app.js has to wire it.
     assert "loadAccess" in TestClient(app).get("/static/app.js").text
 
@@ -1721,6 +1725,9 @@ def test_help_page_lists_the_library_files():
     assert "Fontes externas" in page
     assert "Gerar blocos a partir da fonte" in page
     assert "TIA Portal 13" in page
+    # The customer watches production and never opens TIA Portal, so the topic has
+    # to say who it is for instead of reading like a task for everyone.
+    assert "quem programa o CLP" in page
     # The customer may have installed TIA Portal in English, so the labels and the
     # file filter of the dialog go in both languages, as they appear on screen.
     assert "External source files" in page

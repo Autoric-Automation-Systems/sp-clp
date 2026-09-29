@@ -125,6 +125,7 @@
           <p>Salve um destes endereços nos favoritos do navegador. O primeiro funciona para qualquer computador na mesma rede do painel:</p>
           <ul id="access-addresses"><li>Carregando...</li></ul>
           <p id="access-alias" class="access-alias"></p>
+          <p><strong>No celular ou tablet</strong>, use o endereço de <strong>IP</strong>, como <code>http://192.168.0.10:8000</code>: o nome da máquina normalmente não resolve no celular, e o painel se ajusta sozinho à tela. O celular precisa estar na <strong>mesma rede</strong> do painel; Wi-Fi de visitantes, ou com clientes isolados entre si, não chega até ele.</p>
           <p>Para usar o apelido da marca, o nome precisa existir no Windows de quem acessa. Há dois caminhos, ambos exigindo permissão de administrador uma única vez:</p>
           <ul>
             <li><strong>Renomear este computador</strong> para <code>sp-clp</code> (Configurações &gt; Sistema &gt; Renomear). Qualquer máquina da rede passa a enxergar o painel por <code>http://sp-clp:8000</code>.</li>
@@ -135,7 +136,7 @@
         </article>
         <article class="panel doc">
           <p class="eyebrow">9. BIBLIOTECA</p><h3>Importar o bloco no TIA Portal</h3>
-          <p>O painel foi feito para um bloco do CLP, o <code>FB_SP-CLP</code>. É ele que declara os endereços que o painel lê, então importe antes de montar a DB da máquina.</p>
+          <p>Este tópico é para <strong>quem programa o CLP</strong>. O painel lê um bloco do CLP, o <code>FB_SP-CLP</code>, que declara os endereços lidos: importe antes de montar a DB da máquina. Quem só acompanha a produção não precisa de nada disto — o painel já está pronto.</p>
           <ul id="library-files" class="library-list"><li>Carregando...</li></ul>
           <ol>
             <li>Baixe o arquivo <code>FB_SP-CLP.scl</code> na lista acima e guarde numa pasta do projeto.</li>

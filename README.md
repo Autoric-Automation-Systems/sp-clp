@@ -23,6 +23,8 @@ Abra `http://127.0.0.1:8000` no navegador. O dashboard abre mesmo sem senha e se
 
 O executável escuta em **todas as interfaces** (`0.0.0.0:8000`), então o painel também responde pelo nome do computador e pelo IP da rede — é o que permite salvar um favorito amigável (`http://nome-do-pc:8000`) e abrir de outra máquina da planta. A página **Ajuda** mostra os endereços válidos, lidos de `/api/access`.
 
+É o mesmo caminho para **celular ou tablet**: o endereço de IP, como `http://192.168.0.10:8000`, com o aparelho na mesma rede do painel. O nome da máquina normalmente não resolve no celular, porque ele não consulta o `hosts` do Windows. O layout se ajusta à tela pequena. Wi-Fi de visitantes, ou com clientes isolados entre si, não chega até o painel.
+
 ### Apelido da marca (`http://sp-clp`)
 
 O painel gosta de ser chamado de `sp-clp`, mas o nome precisa existir no Windows para virar endereço. `/api/access` informa `alias`, `alias_url` e `alias_ready`, e a Ajuda só anuncia o apelido quando ele realmente responde neste computador. Dois caminhos, os dois exigindo administrador uma única vez:
