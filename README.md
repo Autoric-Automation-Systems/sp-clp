@@ -207,8 +207,24 @@ Uma thread do próprio servidor lê cada máquina cadastrada a cada **5 segundos
 - A contagem é gravada como delta, com a mesma política de sempre: valor que diminuiu inicia nova linha de base e não vira produção negativa
 - Os sinais viram uma linha **por mudança**, não por leitura (`signal_events`): um bit que não se mexe não gera linha, então um dia inteiro custa algumas centenas de registros em vez de 17 mil
 - O intervalo se troca por `SP_CLP_POLL_SECONDS` (padrão `5`, mínimo `1`); o gravador nunca morre por causa de um CLP fora do ar, ele tenta no ciclo seguinte
-- **Retenção de 7 dias**, para contagens e para sinais: a limpeza roda no arranque e a cada hora. A navegação por dia para sozinha no primeiro dia que ainda existe
 - `app/signals.py` monta o dia a partir dos eventos e das leituras, sem tocar em banco nem em relógio, para dar para testar sem CLP
+
+### O que fica guardado e o que é apagado
+
+O histórico é curto de propósito, e ele é **só o histórico**: a limpeza não encosta no cadastro nem nas configurações.
+
+| Guardado sempre | Apagado depois de 7 dias |
+| --- | --- |
+| Plantas, áreas e máquinas | `count_samples` — uma linha por leitura |
+| Rótulos dos sinais | `hourly_counts` — os totais por hora |
+| Senha (como hash) e nome da empresa | `signal_events` — as mudanças dos quatro sinais |
+| Logotipo, em `data/logo.<ext>` | — |
+| Porta, apelido e o resto em `settings` | — |
+
+- Tudo isso vive em `data/sp-clp.sqlite3`, ao lado do executável; `SP_CLP_DB` aponta para outro arquivo
+- A limpeza roda **no arranque e a cada hora**. Ao atualizar uma instalação que já gravava produção, os dias anteriores aos 7 são apagados na primeira limpeza — o cadastro continua intacto
+- Os 7 dias são a constante `RETENTION_DAYS`, em `app/recorder.py`. Mudar o prazo é mexer no código: trocar isso por um banco com histórico longo é assunto da versão PRO
+- **Apagar o banco apaga tudo**, inclusive o cadastro. É justamente por isso que a recuperação de senha tem comando próprio (`--reset-password`) em vez de mandar apagar o arquivo
 
 ## Endereços
 

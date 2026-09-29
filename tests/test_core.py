@@ -747,6 +747,15 @@ def test_the_trend_icon_is_vendored_with_the_others():
     assert "trending-up" in icons
 
 
+def test_the_help_page_says_what_the_panel_keeps():
+    page = TestClient(app).get("/").text
+    assert "últimos 7 dias" in page
+    # The customer's fear is losing the registration, so the page says it does not
+    # go away with the history.
+    assert "cadastro não entra" in page
+    assert "mesmo com o navegador fechado" in page
+
+
 def test_the_status_endpoint_does_not_write_history():
     """The recorder owns the history, so opening the panel cannot change it."""
     area_id = app_storage.add_area("Planta Leitura", "Area Leitura")
