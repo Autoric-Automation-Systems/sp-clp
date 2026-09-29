@@ -1012,6 +1012,49 @@ def test_access_urls_prefer_the_machine_name():
     assert access_urls(port=8000, host="127.0.0.1") == ["http://localhost:8000"]
 
 
+def test_local_addresses_lists_every_card_and_drops_what_nobody_can_use(monkeypatch):
+    """A Windows box with a plant card and a VirtualBox NAT card is the reason."""
+    from app import access
+
+    def fake_getaddrinfo(*_args, **_kwargs):
+        return [
+            (2, 1, 6, "", ("127.0.0.1", 0)),
+            # What a dead cable or a missing DHCP server leaves behind.
+            (2, 1, 6, "", ("169.254.10.20", 0)),
+            (2, 1, 6, "", ("10.0.3.15", 0)),
+            (2, 1, 6, "", ("192.168.0.250", 0)),
+            (2, 1, 6, "", ("192.168.0.250", 0)),
+        ]
+
+    monkeypatch.setattr(access.socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(access, "lan_address", lambda: "10.0.3.15")
+
+    # The default route one comes first, and the duplicates are gone.
+    assert access.local_addresses() == ["10.0.3.15", "192.168.0.250"]
+
+    urls = access.access_urls(port=8000, host="0.0.0.0")
+    # The plant address has to be on the list even though the default route
+    # points at the NAT card, which is the address nobody else can reach.
+    assert "http://192.168.0.250:8000" in urls
+    assert "http://10.0.3.15:8000" in urls
+    assert "http://localhost:8000" in urls
+
+
+def test_local_addresses_falls_back_to_the_probe_when_the_name_lookup_fails(monkeypatch):
+    from app import access
+
+    def refusing(*_args, **_kwargs):
+        raise OSError("sem DNS nesta rede")
+
+    monkeypatch.setattr(access.socket, "getaddrinfo", refusing)
+    monkeypatch.setattr(access, "lan_address", lambda: "192.168.0.250")
+    assert access.local_addresses() == ["192.168.0.250"]
+
+    # And with no address at all the list stays empty instead of raising.
+    monkeypatch.setattr(access, "lan_address", lambda: None)
+    assert access.local_addresses() == []
+
+
 def test_access_endpoint_is_public_and_lists_the_addresses():
     response = TestClient(app).get("/api/access")
     assert response.status_code == 200

@@ -93,6 +93,39 @@ def lan_address() -> str | None:
     return address if address and address != "127.0.0.1" else None
 
 
+def _usable(address: str) -> bool:
+    # Loopback is offered last as localhost, and a 169.254 address is what a dead
+    # cable or a missing DHCP server produces: nobody reaches the panel on it.
+    return not address.startswith("127.") and not address.startswith("169.254.")
+
+
+def local_addresses() -> list[str]:
+    """Every IPv4 address this machine answers on, the default route one first.
+
+    A machine with one network card and one address answers the same as before.
+    The reason to look further is the Windows box that carries more than one: the
+    plant network and a Wi-Fi network, a VirtualBox NAT card, WSL or Hyper-V. The
+    default route there points at the address nobody else can reach, which is how
+    the help page ends up advertising an address that does not work.
+    """
+    found: list[str] = []
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            address = info[4][0]
+            if _usable(address) and address not in found:
+                found.append(address)
+    except OSError:
+        # A plant network without DNS can refuse the name lookup; the probe below
+        # is the only address then, which is what this returned before.
+        pass
+    primary = lan_address()
+    if primary and primary in found:
+        found.remove(primary)
+    if primary:
+        found.insert(0, primary)
+    return found
+
+
 def access_urls(port: int | None = None, host: str | None = None) -> list[str]:
     """Addresses to open the dashboard, friendliest first.
 
@@ -106,8 +139,7 @@ def access_urls(port: int | None = None, host: str | None = None) -> list[str]:
     if alias_ready():
         urls.append(alias_url(resolved_port))
     urls.append(website(machine_name(), resolved_port))
-    address = lan_address()
-    if address:
+    for address in local_addresses():
         urls.append(website(address, resolved_port))
     urls.append(website("localhost", resolved_port))
     return urls

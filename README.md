@@ -23,6 +23,8 @@ Abra `http://127.0.0.1:8000` no navegador. O dashboard abre mesmo sem senha e se
 
 O executável escuta em **todas as interfaces** (`0.0.0.0:8000`), então o painel também responde pelo nome do computador e pelo IP da rede — é o que permite salvar um favorito amigável (`http://nome-do-pc:8000`) e abrir de outra máquina da planta. A página **Ajuda** mostra os endereços válidos, lidos de `/api/access`.
 
+Quando a máquina tem **mais de uma placa de rede** — a rede da planta e o Wi-Fi, uma placa NAT de máquina virtual, ou um adaptador do WSL/Hyper-V — a Ajuda lista o endereço de **cada uma**, com o da rota padrão primeiro. Listar todos é o que salva o caso em que a rota padrão aponta justamente para a placa que ninguém alcança, que é o que acontece numa VM com adaptador NAT. Endereços `127.` (loopback, que aparece como `localhost`) e `169.254.` (o que sobra de cabo desconectado ou DHCP ausente) ficam de fora, porque não levam a lugar nenhum.
+
 É o mesmo caminho para **celular ou tablet**: o endereço de IP, como `http://192.168.0.10:8000`, com o aparelho na mesma rede do painel. O nome da máquina normalmente não resolve no celular, porque ele não consulta o `hosts` do Windows. O layout se ajusta à tela pequena. Wi-Fi de visitantes, ou com clientes isolados entre si, não chega até o painel.
 
 ### Apelido da marca (`http://sp-clp`)
