@@ -1831,6 +1831,23 @@ def test_changing_page_returns_to_the_top():
     assert "window.scrollTo({top: 0})" in script
 
 
+def test_the_automatic_signal_uses_the_cycle_icon():
+    script = TestClient(app).get("/static/app.js").text
+    # The power symbol read as a switch somebody presses. Automatic means the
+    # machine cycles on its own, which is what the two arrows say.
+    assert "item.kind === 'auto') return 'refresh-cw'" in script
+    assert "item.kind === 'auto') return 'power'" not in script
+
+
+def test_the_header_leaves_room_for_the_content_on_a_phone_and_less_on_a_desktop():
+    css = TestClient(app).get("/static/styles.css").text
+    mobile = css[css.index("@media(max-width:700px)"):]
+    # The fixed header is 113 px on a phone and 102 px on a desktop. The padding has
+    # to clear it and still leave a gap, and the phone had the tighter one.
+    assert "main{max-width:1240px;margin:0 auto;padding:142px 6vw 70px" in css
+    assert "main{padding:152px 5vw 50px}" in mobile
+
+
 def test_the_page_does_not_let_phones_inflate_the_text():
     css = TestClient(app).get("/static/styles.css").text
     # Font boosting grows the text on a real phone and pushes the settings buttons

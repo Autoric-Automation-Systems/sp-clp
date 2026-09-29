@@ -101,7 +101,9 @@ function stateIcon(state) {
 function signalIcon(item) {
   if (item.kind === 'fault') return 'triangle-alert';
   if (item.kind === 'safety') return 'shield-check';
-  if (item.kind === 'auto') return 'power';
+  // Two arrows chasing each other: the machine cycles on its own, instead of the
+  // power symbol, which reads as a switch somebody has to press.
+  if (item.kind === 'auto') return 'refresh-cw';
   if (item.kind === 'run') return 'play';
   if (item.kind === 'counter') return 'gauge';
   return 'tag';
