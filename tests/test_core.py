@@ -1695,7 +1695,13 @@ def test_status_blocks_colour_the_icon_without_trusting_colour_alone():
     script = TestClient(app).get("/static/app.js").text
     assert "STATE_HUES" in script
     assert "statusColour" in script
-    # The word and the shape stay, so a colour-blind operator loses nothing.
+    # The icon is the whole block, so the bar that used to sit above it is gone.
+    assert "border-top:3px solid var(--state)" not in css
+    assert ".state strong" not in css and ".state small" not in css
+    # The wording did not disappear, it moved into the tooltip, which is also the
+    # accessible label because there is no visible text left to name the block.
+    assert "${stateText(item, state)}" in script
+    assert "aria-label=" in script
     assert "counter: ['Sem contagem', 'Contando']" in script
     assert "statusTooltip" in script
 

@@ -122,16 +122,19 @@ function statusColour(item, state) {
 
 function statusTooltip(item, state) {
   if (state === 'unknown') return `${item.label} (${item.address}) - sem leitura do CLP`;
-  return `${item.label} (${item.address}) - bit ${item.value ? 1 : 0}`;
+  // The word that used to sit under the icon lives here now, so the vocabulary is
+  // still reachable without a label taking room on the card.
+  return `${item.label} (${item.address}) - bit ${item.value ? 1 : 0} - ${stateText(item, state)}`;
 }
 
 function statusBlock(item) {
   if (!item) return '';
+  // Only the icon is drawn: its shape says which signal and its colour says the
+  // state. The wording waits on hover, and an accessible label carries it for
+  // whoever cannot hover.
   const state = stateOf(item);
-  const text = stateText(item, state);
-  const colour = statusColour(item, state);
   const tip = statusTooltip(item, state);
-  return `<div class="state ${colour}" title="${esc(tip)}"><span class="state-icon">${icon(signalIcon(item))}</span><div><strong>${text}</strong><small>${esc(item.label)}</small></div></div>`;
+  return `<div class="state ${statusColour(item, state)}" title="${esc(tip)}" aria-label="${esc(tip)}"><span class="state-icon">${icon(signalIcon(item))}</span></div>`;
 }
 
 function signalsOfKind(status, kind) {
