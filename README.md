@@ -150,7 +150,7 @@ app/library/
     mitsubishi/SP-CLP.gxw
 ```
 
-O arquivo de cada família é uma **fonte SCL**, importada no TIA Portal como *fonte externa* e compilada em bloco. Serve do **TIA Portal 13 em diante**, então existe **uma versão só**: não há arquivo por versão do TIA para escolher, e o próprio nome do arquivo já é o nome do bloco.
+O arquivo de cada família é uma **fonte SCL**, importada no TIA Portal como *fonte externa* (*External source files*) e compilada em bloco. Serve do **TIA Portal 13 em diante**, então existe **uma versão só**: não há arquivo por versão do TIA para escolher, e o próprio nome do arquivo já é o nome do bloco.
 
 - A fonte declara o bloco com `S7_Optimized_Access := 'FALSE'`, ou seja, o **acesso otimizado já vem desligado** do arquivo. É exatamente o que o painel precisa: ele lê endereços absolutos, e num bloco otimizado essas posições não existem
 - **Tudo o que estiver dentro de um diretório de família é oferecido**, com qualquer extensão: o carregador não filtra por sufixo, então uma exportação antiga em `.zal`/`.zal17` ou o arquivo de outra marca entram na lista do mesmo jeito

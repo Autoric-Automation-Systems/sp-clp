@@ -1721,6 +1721,10 @@ def test_help_page_lists_the_library_files():
     assert "Fontes externas" in page
     assert "Gerar blocos a partir da fonte" in page
     assert "TIA Portal 13" in page
+    # The customer may have installed TIA Portal in English, so the labels and the
+    # file filter of the dialog go in both languages, as they appear on screen.
+    assert "External source files" in page
+    assert "*.scl;*.db;*.udt" in page
     # The old flow was a .zal global library opened from a menu: it must not come
     # back, because the customer would follow it and find no such file.
     assert "Bibliotecas globais" not in page

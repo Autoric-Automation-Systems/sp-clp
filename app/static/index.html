@@ -139,8 +139,8 @@
           <ul id="library-files" class="library-list"><li>Carregando...</li></ul>
           <ol>
             <li>Baixe o arquivo <code>FB_SP-CLP.scl</code> na lista acima e guarde numa pasta do projeto.</li>
-            <li>No TIA Portal, com o projeto aberto, abra <strong>Fontes externas</strong>, sob a PLC, e use <strong>Adicionar arquivo externo</strong> para apontar para o arquivo baixado.</li>
-            <li>Clique com o botão direito na fonte adicionada e escolha <strong>Gerar blocos a partir da fonte</strong>. O TIA compila o texto e cria o bloco <code>FB_SP-CLP</code> em <em>Blocos de programa</em>.</li>
+            <li>No TIA Portal, com o projeto aberto, abra no painel do projeto a pasta <strong>Fontes externas</strong> (<em>External source files</em>), no grupo da PLC, junto de <em>Blocos de programa</em>, e clique em <strong>Adicionar arquivo externo</strong> (<em>Add new external file</em>). No diálogo, deixe o filtro em <em>All sources</em> (<code>*.scl;*.db;*.udt</code>), que é o que mostra o arquivo baixado.</li>
+            <li>Clique com o botão direito na fonte que apareceu na árvore e escolha <strong>Gerar blocos a partir da fonte</strong> (<em>Generate blocks from source</em>). O TIA compila o texto e cria o bloco <code>FB_SP-CLP</code> em <em>Blocos de programa</em>.</li>
             <li>Chame o FB num <em>OB</em> cíclico (normalmente o <code>OB1</code>) e deixe o TIA criar a <strong>DB de instância</strong> dele. É essa DB que o painel vai ler.</li>
             <li>A fonte já declara o bloco com o <strong>acesso otimizado desligado</strong>. Não ligue essa opção: sem as posições absolutas o painel não enxerga nada.</li>
           </ol>
