@@ -55,11 +55,29 @@ Monitorar não exige senha; **configurar exige**. A senha é criada na primeira 
 
 - **A sessão termina sozinha após 5 minutos** sem uso, dos dois lados: o navegador desliga o painel e o servidor descarta o token. Alargar a janela depois não ressuscita um token vencido
 - Qualquer pedido autenticado empurra o prazo. O `polling` de 5 s do card **não** conta como uso, senão o painel nunca se desligaria
-- **Trocar a senha**: *Configurações → Acesso* pede a senha atual, a nova e a repetição. A repetição é conferida no navegador, porque um erro de digitação trancaria o cliente para fora sem volta
+- **Trocar a senha**: *Configurações → Acesso* pede a senha atual, a nova e a repetição. A repetição é conferida no navegador, porque um erro de digitação só se resolve indo até a máquina do painel
 - A troca **encerra as outras sessões** e mantém a de quem trocou
 - Senha atual errada responde **403**, não 401: 401 é sessão inválida, e o painel sairia da configuração por causa de um erro de digitação
 - Sem senha configurada, `GET /api/setup/status` responde `password_configured: false` e o painel oferece a criação; depois disso, `POST /api/setup/password` responde `409`
-- **Não há recuperação de senha**, porque o aplicativo é local e não envia nada. Anote a senha onde a equipe encontre; hoje a única saída é apagar `data/sp-clp.sqlite3`, que leva junto o cadastro e o histórico
+- **Esqueceu a senha**: rode o comando de recuperação na máquina do painel, descrito abaixo. Não existe redefinição por rede, e-mail ou link
+
+### Esqueceu a senha
+
+Na máquina do painel, abra um terminal e rode:
+
+```powershell
+.\SP-CLP.exe --reset-password
+```
+
+O comando pede a senha nova **duas vezes** e encerra sem subir o painel. Depois disso, inicie o painel normalmente e entre com a senha nova. Em desenvolvimento, sem executável: `sp-clp --reset-password`.
+
+- É um **comando local, na máquina do painel**, na mesma ideia do `grafana-cli admin reset-admin-password`: quem tem o console já pode apagar `data/sp-clp.sqlite3`, e um caminho estreito é melhor do que empurrar o cliente para essa exclusão
+- Pede **só a senha nova**. A senha antiga não ajuda em nada aqui
+- A senha é lida do console com eco desligado, então **não entra no histórico** do PowerShell nem na linha de comando do processo
+- **Nada fica guardado** em variável de ambiente nem no registro, então reiniciar o painel não repete a redefinição. É por isso que o comando não é uma variável `SP_CLP_RESET_PASSWORD`: com `setx`, essa variável reescreveria a senha em **todo** arranque
+- Falha em vez de gravar uma senha curta ou uma repetição que não confere, e sai com código `1`
+- Não existe endpoint HTTP de redefinição. O painel escuta em `0.0.0.0`, e uma rota dessas seria um acesso remoto
+- Se o painel estiver aberto, **feche antes**: as sessões vivem na memória do servidor e só caem no próximo arranque. O comando avisa isso ao terminar
 
 ## Infraestrutura de rede
 
@@ -177,6 +195,7 @@ A página `Ajuda` traz a documentação de uso: acesso, cadastro, rótulos de si
 - `app/branding.py`: nome da empresa e logotipo do cabeçalho
 - `app/access.py`: endereços de acesso e configuração do bind
 - `app/slugs.py`: nome da planta convertido em endereço
+- `app/recovery.py`: comando `--reset-password`, a recuperação pela máquina do painel
 - `app/security.py`: hash de senha PBKDF2
 - `app/static/`: dashboard HTML/CSS/JavaScript
 - `app/static/icons.js`: ícones do [Lucide](https://lucide.dev) gerados por `scripts/build_icons.py` e servidos localmente, sem CDN

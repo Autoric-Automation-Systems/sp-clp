@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import sys
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -57,6 +58,7 @@ from .plc import (
     scan_databases,
     signal_label,
 )
+from .recovery import apply_reset, parse_options
 from .security import hash_password, verify_password
 from .slugs import RESERVED_PAGES, plant_name_error, plant_slugs, slugify
 from .storage import Storage
@@ -574,6 +576,12 @@ def run() -> None:
     import threading
     import uvicorn
     import webbrowser
+
+    options = parse_options(sys.argv[1:])
+    if options.reset_password:
+        # A one-shot recovery command, not a way to start the panel: it writes the
+        # new hash and leaves, so nothing is left half started.
+        raise SystemExit(0 if apply_reset(storage) else 1)
 
     port = bind_port()
     # The operator at this machine gets localhost; the named address is what makes

@@ -1,15 +1,17 @@
+import getpass
 import logging
 import re
+import sys
 import time
 from datetime import datetime, timezone
 
 import pytest
+import uvicorn
 from app import main as main_module
 from app.branding import remove_logos
 from app.models import MachineInput
 from app.plc import (
-    BOOL_LAYOUT,
-    DINT_LAYOUT,
+    BOOL_LAYOUT,    DINT_LAYOUT,
     DINT_SIZE,
     EDITABLE_ADDRESSES,
     LOCKED_ADDRESSES,
@@ -27,6 +29,7 @@ from app.plc import (
     signal_label,
     signal_offset,
 )
+from app.recovery import apply_reset, parse_options
 from app.security import hash_password, verify_password
 from app.storage import Storage
 from fastapi.testclient import TestClient
@@ -1946,3 +1949,102 @@ def test_the_help_page_explains_the_new_session_rules():
     assert "A sessão dura enquanto o servidor estiver rodando" not in page
     assert "5 minutos" in page
     assert "Trocar a senha" in page
+
+
+# --- recuperacao de senha pela linha de comando -------------------------------
+
+
+def _answers(*values):
+    """A getpass replacement that hands back the values in order."""
+    replies = list(values)
+
+    def ask(_prompt):
+        return replies.pop(0)
+
+    return ask
+
+
+def test_only_the_flag_asks_for_a_reset():
+    assert parse_options(["--reset-password"]).reset_password is True
+    assert parse_options([]).reset_password is False
+    # The panel opens from a shortcut, and an unexpected argument there must never
+    # be the reason it refuses to start.
+    assert parse_options(["--nao-existe"]).reset_password is False
+
+
+def test_the_panel_documents_the_flag_in_its_own_help(capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        parse_options(["--help"])
+    assert exit_info.value.code == 0
+    assert "--reset-password" in capsys.readouterr().out
+
+
+def test_the_reset_refuses_a_mismatch_and_changes_nothing(admin_password):
+    written = []
+    refused = apply_reset(
+        app_storage, reader=_answers("senha-nova-123", "outra-senha-456"), writer=written.append
+    )
+    assert refused is False
+    assert verify_password(admin_password, app_storage.get_setting("password_hash"))
+    assert any("conferem" in line for line in written)
+    # Nothing the command prints may carry the password it just read.
+    assert not any("senha-nova-123" in line for line in written)
+
+
+def test_the_reset_refuses_a_short_password(admin_password):
+    written = []
+    refused = apply_reset(app_storage, reader=_answers("curta", "curta"), writer=written.append)
+    assert refused is False
+    assert verify_password(admin_password, app_storage.get_setting("password_hash"))
+    assert any("8 caracteres" in line for line in written)
+
+
+def test_the_reset_replaces_the_password_the_login_uses(admin_password):
+    client = TestClient(app)
+    end_session(_login(client, admin_password))
+    written = []
+    changed = apply_reset(
+        app_storage, reader=_answers("senha-nova-123", "senha-nova-123"), writer=written.append
+    )
+    assert changed is True
+    # The key the command writes has to be the key the panel reads.
+    assert client.post("/api/auth/login", json={"password": admin_password}).status_code == 401
+    end_session(_login(client, "senha-nova-123"))
+    assert written
+
+
+def test_the_reset_flag_leaves_without_serving(monkeypatch):
+    served = []
+    monkeypatch.setattr(getpass, "getpass", _answers("senha-nova-123", "senha-nova-123"))
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: served.append(args))
+    monkeypatch.setattr(sys, "argv", ["SP-CLP.exe", "--reset-password"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        main_module.run()
+
+    assert exit_info.value.code == 0
+    # A recovery command, not another way to start the panel.
+    assert served == []
+    assert verify_password("senha-nova-123", app_storage.get_setting("password_hash"))
+
+
+def test_a_refused_reset_leaves_with_an_error_code(monkeypatch, admin_password):
+    monkeypatch.setattr(getpass, "getpass", _answers("curta", "curta"))
+    monkeypatch.setattr(sys, "argv", ["SP-CLP.exe", "--reset-password"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        main_module.run()
+
+    assert exit_info.value.code == 1
+    assert verify_password(admin_password, app_storage.get_setting("password_hash"))
+
+
+def test_there_is_no_http_way_to_reset_the_password():
+    """The panel answers on every interface, so a reset route would be a backdoor."""
+    paths = [getattr(route, "path", "") for route in app.routes]
+    assert not [path for path in paths if "reset" in path]
+
+
+def test_the_help_page_explains_how_to_recover_the_password():
+    page = TestClient(app).get("/").text
+    assert "--reset-password" in page
