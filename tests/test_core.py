@@ -1784,6 +1784,49 @@ def test_help_page_lists_the_library_files():
     assert "loadLibrary" in TestClient(app).get("/static/app.js").text
 
 
+def test_the_help_page_has_a_summary_that_reaches_every_topic():
+    page = TestClient(app).get("/").text
+    anchors = re.findall(r'href="#(doc-[a-z-]+)"', page)
+    ids = re.findall(r'article class="panel doc" id="(doc-[a-z-]+)"', page)
+    # Nine panels one after the other is a long scroll on a phone, so every topic
+    # needs a way in, and every link needs something to land on.
+    assert len(ids) == 9
+    assert anchors == ids
+
+
+def test_the_status_row_keeps_the_icons_side_by_side_on_a_phone():
+    css = TestClient(app).get("/static/styles.css").text
+    mobile = css[css.index("@media(max-width:700px)"):]
+    # The blocks are icon only now, so one per row wastes five rows of height.
+    assert ".state-grid{grid-template-columns:1fr}" not in mobile
+    assert ".state-grid{grid-template-columns:repeat(auto-fit,minmax(44px,1fr))" in mobile
+
+
+def test_the_help_summary_is_not_squeezed_by_the_menu_nav_rule():
+    css = TestClient(app).get("/static/styles.css").text
+    # nav{display:flex} exists for the header and the menu. The index inherits it
+    # unless it says otherwise, and then it collapses to the width of one chip and
+    # nine links become nine rows instead of five.
+    assert ".doc-summary{display:block" in css
+    assert ".doc-summary ul{display:grid" in css
+
+
+def test_the_page_does_not_let_phones_inflate_the_text():
+    css = TestClient(app).get("/static/styles.css").text
+    # Font boosting grows the text on a real phone and pushes the settings buttons
+    # past the card edge, which a desktop browser never reproduces.
+    assert "text-size-adjust:100%" in css
+
+
+def test_the_settings_rows_stack_on_a_phone():
+    css = TestClient(app).get("/static/styles.css").text
+    mobile = css[css.index("@media(max-width:700px)"):]
+    # Three buttons beside the machine name run past the card on a narrow screen.
+    assert ".machine-list-item{flex-direction:column" in mobile
+    assert ".machine-actions{flex-wrap:wrap}" in mobile
+    assert ".list-item{flex-wrap:wrap" in mobile
+
+
 def test_the_build_ships_the_block_the_help_page_offers():
     """The download and the real folder have to agree, or the page offers nothing."""
     from app import libraries

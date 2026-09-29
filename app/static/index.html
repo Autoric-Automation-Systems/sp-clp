@@ -40,8 +40,9 @@
     </section>
     <section id="help-page" class="page" hidden>
       <section class="intro"><div><p class="eyebrow">PÁGINA ATUAL / AJUDA</p><h2>Como usar o SP-CLP</h2></div><span class="private-label"><svg class="icon" data-icon="info"></svg>Documentação</span></section>
+      <nav class="doc-summary" aria-label="Tópicos da ajuda"><p class="eyebrow">TÓPICOS DA AJUDA</p><ul><li><a href="#doc-acesso"><span>1</span>Acesso</a></li><li><a href="#doc-cadastro"><span>2</span>Cadastro</a></li><li><a href="#doc-sinais"><span>3</span>Sinais</a></li><li><a href="#doc-leitura"><span>4</span>Leitura</a></li><li><a href="#doc-enderecos"><span>5</span>Endereços</a></li><li><a href="#doc-problemas"><span>6</span>Problemas</a></li><li><a href="#doc-rede"><span>7</span>Rede</a></li><li><a href="#doc-onde-abrir"><span>8</span>Onde abrir</a></li><li><a href="#doc-biblioteca"><span>9</span>Biblioteca</a></li></ul></nav>
       <div class="doc-grid">
-        <article class="panel doc">
+        <article class="panel doc" id="doc-acesso">
           <p class="eyebrow">1. ACESSO</p><h3>Entrar na configuração</h3>
           <p>O painel abre sem senha, mas <strong>configurar exige login</strong>. Na página Configurações, clique em <em>Entrar</em>.</p>
           <ul>
@@ -52,7 +53,7 @@
             <li>Esqueceu a senha: peça ao responsável técnico para rodar <code>SP-CLP.exe --reset-password</code> na máquina do painel. O comando pede a senha nova duas vezes, não sobe o painel e não passa pela rede.</li>
           </ul>
         </article>
-        <article class="panel doc">
+        <article class="panel doc" id="doc-cadastro">
           <p class="eyebrow">2. CADASTRO</p><h3>Plantas, áreas e máquinas</h3>
           <ul>
             <li><strong>Planta</strong> é o grupo maior (ex.: <em>RioVerde</em>). Cada planta ganha um endereço próprio, como <code>/RioVerde</code>, a partir do nome que você digitar.</li>
@@ -64,7 +65,7 @@
           <p>O DB do SP-CLP começa com os 16 BOOLs em <code>0.0</code>–<code>1.7</code>, segue com os três inteiros em <code>2.0</code>, <code>6.0</code> e <code>10.0</code>, tem a <strong>assinatura de 5 caracteres</strong> (<code>SPCLP</code>) a partir do byte <code>14</code> e o contador no byte <code>20</code>. É essa assinatura que a varredura procura. Sem ela o painel avisa que a DB não é do SP-CLP, o que evita valores sem sentido no dashboard.</p>
           <p>Declare o bloco com <strong>acesso otimizado desligado</strong>: o painel lê endereços absolutos, e num bloco otimizado essas posições não existem.</p>
         </article>
-        <article class="panel doc">
+        <article class="panel doc" id="doc-sinais">
           <p class="eyebrow">3. SINAIS</p><h3>Renomear os sinais</h3>
           <p>Em Configurações, clique em <em>Sinais</em> na máquina desejada.</p>
           <ul>
@@ -76,7 +77,7 @@
             <li>Deixar o campo vazio devolve o nome padrão.</li>
           </ul>
         </article>
-        <article class="panel doc">
+        <article class="panel doc" id="doc-leitura">
           <p class="eyebrow">4. LEITURA</p><h3>O que o painel mostra</h3>
           <ul>
             <li><strong>Online</strong> verde: o CLP respondeu na última leitura.</li>
@@ -89,7 +90,7 @@
             <li>O número grande do card é o <code>Count</code> do DB. Ele <strong>não</strong> vem do bit <code>Contador</code> (<code>0.4</code>): quem soma é o programa do CLP, na borda de subida, e o painel só lê.</li>
           </ul>
         </article>
-        <article class="panel doc">
+        <article class="panel doc" id="doc-enderecos">
           <p class="eyebrow">5. ENDEREÇOS</p><h3>Um endereço por planta</h3>
           <p>O painel principal mostra todas as plantas com o status de cada máquina. Clicando em uma planta você abre os detalhes dela em um endereço próprio, que pode ser favoritado ou aberto direto:</p>
           <ul>
@@ -97,7 +98,7 @@
             <li><code>/Configuracoes</code> e <code>/Ajuda</code> — as demais páginas.</li>
           </ul>
         </article>
-        <article class="panel doc">
+        <article class="panel doc" id="doc-problemas">
           <p class="eyebrow">6. PROBLEMAS</p><h3>Quando algo não funciona</h3>
           <ul>
             <li><strong>Tudo offline ao mesmo tempo</strong>: confira o cabo/rede do painel e se o IP no cadastro é o do CLP.</li>
@@ -107,7 +108,7 @@
             <li><strong>Senha esquecida</strong>: rode <code>SP-CLP.exe --reset-password</code> na máquina do painel, como no tópico <em>1. Acesso</em>. Nada precisa ser apagado do banco.</li>
           </ul>
         </article>
-        <article class="panel doc">
+        <article class="panel doc" id="doc-rede">
           <p class="eyebrow">7. REDE</p><h3>Infraestrutura de rede</h3>
           <p>O computador que roda o SP-CLP precisa <strong>conversar com cada CLP</strong> cadastrado. Os CLPs não são descobertos sozinhos: vale a rede entre o painel e cada endereço IP informado no cadastro.</p>
           <ul>
@@ -120,7 +121,7 @@
           </ul>
           <p><strong>Não funciona</strong>: CLP atrás de NAT sem encaminhamento, rede de visitantes isolada, ou faixas de IP iguais em plantas diferentes sem tradução de endereços. Nesses casos a máquina fica em <em>Offline</em> mesmo com o cabo conectado.</p>
         </article>
-        <article class="panel doc">
+        <article class="panel doc" id="doc-onde-abrir">
           <p class="eyebrow">8. ACESSO</p><h3>Onde abrir o painel</h3>
           <p>Salve um destes endereços nos favoritos do navegador. Use o que estiver na <strong>mesma rede</strong> do aparelho que abre o painel: nas máquinas com mais de uma placa aparecem vários, e só os da sua rede respondem.</p>
           <ul id="access-addresses"><li>Carregando...</li></ul>
@@ -134,7 +135,7 @@
           <p>Usando a <strong>porta 80</strong>, o endereço fica sem sufixo e vira só <code>http://sp-clp</code>. A porta se troca pela variável de ambiente <code>SP_CLP_PORT</code>; se ela já estiver ocupada por outro programa, o painel sobe apenas em <code>http://sp-clp:8000</code>.</p>
           <p>Na primeira execução o Windows pode pedir permissão de firewall. <strong>Permita em redes privadas</strong>, senão o painel responde apenas neste computador.</p>
         </article>
-        <article class="panel doc">
+        <article class="panel doc" id="doc-biblioteca">
           <p class="eyebrow">9. BIBLIOTECA</p><h3>Importar o bloco no TIA Portal</h3>
           <p>Este tópico é para <strong>quem programa o CLP</strong>. O painel lê um bloco do CLP, o <code>FB_SP-CLP</code>, que declara os endereços lidos: importe antes de montar a DB da máquina. Quem só acompanha a produção não precisa de nada disto — o painel já está pronto.</p>
           <ul id="library-files" class="library-list"><li>Carregando...</li></ul>
