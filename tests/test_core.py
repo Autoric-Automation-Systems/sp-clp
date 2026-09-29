@@ -1603,24 +1603,24 @@ def test_library_lists_every_file_of_every_family(tmp_path, monkeypatch):
     assert sizes["SP-CLP.zal17"] == len(b"PK\x03\x04versao-17")
 
 
-def test_library_offers_a_versioned_tia_export(tmp_path, monkeypatch):
-    """TIA Portal writes SP-CLP.zal17 for V17, which a *.zal rule would have missed."""
+def test_library_offers_the_scl_the_customer_imports(tmp_path, monkeypatch):
+    """The block is an .scl source; a *.zal rule would have missed it."""
     from app import libraries
 
     (tmp_path / "s7").mkdir()
-    (tmp_path / "s7" / "SP-CLP.zal17").write_bytes(b"PK\x03\x04")
+    (tmp_path / "s7" / "FB_SP-CLP.scl").write_text("FUNCTION_BLOCK \"FB_SP-CLP\"\n")
     monkeypatch.setattr(libraries, "BUNDLED_DIR", tmp_path)
 
     item = TestClient(app).get("/api/library").json()["files"][0]
-    assert item["filename"] == "SP-CLP.zal17"
-    assert item["url"] == "/api/library/s7/SP-CLP.zal17"
+    assert item["filename"] == "FB_SP-CLP.scl"
+    assert item["url"] == "/api/library/s7/FB_SP-CLP.scl"
 
     response = TestClient(app).get(item["url"])
     assert response.status_code == 200
-    assert response.content == b"PK\x03\x04"
+    assert response.text == "FUNCTION_BLOCK \"FB_SP-CLP\"\n"
     disposition = response.headers["content-disposition"]
     assert "attachment" in disposition
-    assert "SP-CLP.zal17" in disposition
+    assert "FB_SP-CLP.scl" in disposition
 
 
 def test_library_ignores_dotfiles_and_stray_folders(tmp_path, monkeypatch):
@@ -1703,16 +1703,45 @@ def test_every_hue_the_script_emits_exists_in_the_stylesheet():
     assert "tracejado" in page
 
 
+def test_the_troubleshooting_panel_points_at_the_command_not_the_database():
+    page = TestClient(app).get("/").text
+    # The old advice was to delete the settings table by hand: destructive, and
+    # more than a customer should ever be asked to do.
+    assert "apague a tabela" not in page
+    assert "Senha esquecida" in page
+    # Both topics that cover a forgotten password point at the command.
+    assert page.count("--reset-password") >= 2
+
+
 def test_help_page_lists_the_library_files():
     page = TestClient(app).get("/").text
     assert "9. BIBLIOTECA" in page
-    assert "Abrir biblioteca global" in page
-    # The block keeps its FB_ name; the exported file does not carry it.
-    assert "FB_SP-CLP" in page
-    assert "SP-CLP.zal17" in page
+    # The block travels as an SCL source, imported as an external source.
+    assert "FB_SP-CLP.scl" in page
+    assert "Fontes externas" in page
+    assert "Gerar blocos a partir da fonte" in page
+    assert "TIA Portal 13" in page
+    # The old flow was a .zal global library opened from a menu: it must not come
+    # back, because the customer would follow it and find no such file.
+    assert "Bibliotecas globais" not in page
+    assert "zal" not in page
     assert 'id="library-files"' in page
     # The rows are built in app.js, so the list must wait for the endpoint.
     assert "loadLibrary" in TestClient(app).get("/static/app.js").text
+
+
+def test_the_build_ships_the_block_the_help_page_offers():
+    """The download and the real folder have to agree, or the page offers nothing."""
+    from app import libraries
+
+    names = [item.filename for item in libraries.available_files()]
+    assert "FB_SP-CLP.scl" in names, "a biblioteca versionada sumiu do repositório"
+    source = (libraries.BUNDLED_DIR / "s7" / "FB_SP-CLP.scl").read_text()
+    assert 'FUNCTION_BLOCK "FB_SP-CLP"' in source
+    # The panel reads absolute addresses, so the block must arrive with the
+    # optimized access already off instead of relying on the operator.
+    assert "S7_Optimized_Access := 'FALSE'" in source
+    assert TestClient(app).get("/api/library/s7/FB_SP-CLP.scl").status_code == 200
 
 
 # --- sessoes: logout e expiracao por inatividade -------------------------------

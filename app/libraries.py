@@ -5,10 +5,11 @@ by guessing a URL, and scripts/build_windows.ps1 carries them into the executabl
 One folder per PLC family, because an installation may serve more than one brand
 over time:
 
-    app/library/s7/SP-CLP.zal17
+    app/library/s7/FB_SP-CLP.scl
 
-The exported file is named after the package, so it carries the TIA Portal release
-instead of the FB_ prefix the block has inside the package.
+The block travels as an SCL source, which TIA Portal 13 and later import as an
+external source and compile into the FB. An older release was served as a versioned
+``.zal`` library export instead; the folder is read as it is, so both keep working.
 """
 
 from __future__ import annotations
@@ -46,9 +47,9 @@ class LibraryFile:
 def available_files() -> list[LibraryFile]:
     """Every file on offer, families and names in alphabetical order.
 
-    Anything in a family folder counts, whatever the extension: the PLC tools name
-    their exports after their own version, and TIA Portal alone writes .zal for
-    older releases and .zal17 for V17.
+    Anything in a family folder counts, whatever the extension: the SCL source is
+    what ships today, and the same folder may hold an older TIA Portal export or
+    another brand's file without any change here.
     """
     if not BUNDLED_DIR.is_dir():
         return []

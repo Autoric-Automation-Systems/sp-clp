@@ -104,7 +104,7 @@
             <li><strong>Uma máquina só</strong>: veja se outro equipamento já usa aquele IP.</li>
             <li><strong>Bit sempre parado</strong>: confira o DB informado no cadastro e a posição no programa do CLP.</li>
             <li><strong>Contador zerando</strong>: o contador reinicia quando o CLP reinicia; a redução vira uma nova linha de base e nunca gera valor negativo.</li>
-            <li><strong>Senha esquecida</strong>: apague a tabela <code>settings</code> do arquivo <code>data/sp-clp.sqlite3</code> e crie uma nova senha.</li>
+            <li><strong>Senha esquecida</strong>: rode <code>SP-CLP.exe --reset-password</code> na máquina do painel, como no tópico <em>1. Acesso</em>. Nada precisa ser apagado do banco.</li>
           </ul>
         </article>
         <article class="panel doc">
@@ -138,14 +138,14 @@
           <p>O painel foi feito para um bloco do CLP, o <code>FB_SP-CLP</code>. É ele que declara os endereços que o painel lê, então importe antes de montar a DB da máquina.</p>
           <ul id="library-files" class="library-list"><li>Carregando...</li></ul>
           <ol>
-            <li>No TIA Portal, com o projeto aberto, escolha <strong>Opções &gt; Bibliotecas globais &gt; Abrir biblioteca global...</strong> e aponte para o arquivo baixado. O nome termina com a versão do TIA que gerou o arquivo, como em <code>SP-CLP.zal17</code>.</li>
-            <li>A biblioteca aberta aparece no painel <em>Bibliotecas</em>, à direita, já com o bloco <code>FB_SP-CLP</code> dentro dela.</li>
-            <li>Arraste o bloco da biblioteca para <em>Blocos de programa</em> do seu projeto. Isso cria uma cópia: a partir daí o bloco é do projeto, e a biblioteca pode ser fechada.</li>
+            <li>Baixe o arquivo <code>FB_SP-CLP.scl</code> na lista acima e guarde numa pasta do projeto.</li>
+            <li>No TIA Portal, com o projeto aberto, abra <strong>Fontes externas</strong>, sob a PLC, e use <strong>Adicionar arquivo externo</strong> para apontar para o arquivo baixado.</li>
+            <li>Clique com o botão direito na fonte adicionada e escolha <strong>Gerar blocos a partir da fonte</strong>. O TIA compila o texto e cria o bloco <code>FB_SP-CLP</code> em <em>Blocos de programa</em>.</li>
             <li>Chame o FB num <em>OB</em> cíclico (normalmente o <code>OB1</code>) e deixe o TIA criar a <strong>DB de instância</strong> dele. É essa DB que o painel vai ler.</li>
-            <li>Na DB de instância, mantenha o <strong>acesso otimizado desligado</strong>. Sem isso as posições absolutas não existem e o painel não enxerga nada.</li>
+            <li>A fonte já declara o bloco com o <strong>acesso otimizado desligado</strong>. Não ligue essa opção: sem as posições absolutas o painel não enxerga nada.</li>
           </ol>
           <p>Depois é só cadastrar a máquina no painel: informe o IP do CLP e use <em>Procurar DB</em>, que acha o número da DB de instância sozinho.</p>
-          <p class="form-hint"><svg class="icon" data-icon="info"></svg>Baixe a versão <strong>igual ou mais antiga</strong> que o seu TIA Portal: um arquivo <code>SP-CLP.zal17</code> só abre a partir da V17. Se houver vários arquivos na lista, escolha o de número maior que o seu TIA ainda aceita.</p>
+          <p class="form-hint"><svg class="icon" data-icon="info"></svg>O arquivo é uma <strong>fonte SCL</strong>, então serve do <strong>TIA Portal 13 em diante</strong>: é uma versão só, não existe arquivo por versão do TIA para escolher.</p>
         </article>
       </div>
     </section>

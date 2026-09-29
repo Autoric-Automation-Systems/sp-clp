@@ -146,13 +146,15 @@ Um diretório por família de CLP, porque a instalação pode atender mais de um
 
 ```
 app/library/
-    s7/SP-CLP.zal17
-    s7/SP-CLP.zal16
+    s7/FB_SP-CLP.scl
     mitsubishi/SP-CLP.gxw
 ```
 
-- **Tudo o que estiver dentro de um diretório de família é oferecido**, com qualquer extensão, porque as ferramentas de CLP batizam o arquivo com a própria versão: o TIA Portal escreve `.zal` em versões antigas e `SP-CLP_20260928_1642.zal17` na V17, com data e hora do export. O nome do arquivo é o do pacote exportado; o prefixo `FB_` fica só no nome do bloco, dentro do pacote
-- **Os arquivos são versionados no repositório**, junto com o código: o painel e o bloco precisam andar juntos, e um build sem a biblioteca gera um instalador que não entrega o bloco ao cliente. São cerca de 300 KB por versão
+O arquivo de cada família é uma **fonte SCL**, importada no TIA Portal como *fonte externa* e compilada em bloco. Serve do **TIA Portal 13 em diante**, então existe **uma versão só**: não há arquivo por versão do TIA para escolher, e o próprio nome do arquivo já é o nome do bloco.
+
+- A fonte declara o bloco com `S7_Optimized_Access := 'FALSE'`, ou seja, o **acesso otimizado já vem desligado** do arquivo. É exatamente o que o painel precisa: ele lê endereços absolutos, e num bloco otimizado essas posições não existem
+- **Tudo o que estiver dentro de um diretório de família é oferecido**, com qualquer extensão: o carregador não filtra por sufixo, então uma exportação antiga em `.zal`/`.zal17` ou o arquivo de outra marca entram na lista do mesmo jeito
+- **Os arquivos são versionados no repositório**, junto com o código: o painel e o bloco precisam andar juntos, e um build sem a biblioteca gera um instalador que não entrega o bloco ao cliente. A fonte é texto, então pesa poucos KB
 - A pasta entra no executável pelo `--add-data` de `scripts/build_windows.ps1`, então **trocar a biblioteca exige gerar o `.exe` de novo**
 - O nome amigável de cada família está em `FAMILY_LABELS`, em `app/libraries.py`; uma pasta não listada aparece com o próprio nome
 - Arquivos começando com ponto são ignorados, que é como uma pasta vazia sobrevive ao `git` (`.gitkeep`)

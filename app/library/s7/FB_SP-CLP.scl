@@ -1,0 +1,57 @@
+﻿FUNCTION_BLOCK "FB_SP-CLP"
+TITLE = FB_SP-CLP
+{ S7_Optimized_Access := 'FALSE' }
+AUTHOR : 'Ruy Junior'
+FAMILY : SP_CLP
+VERSION : 0.1
+//Function for remote monitoring.
+//Autoric.com.br
+   VAR_INPUT 
+      Auto { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Run { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Fault { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Safety { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      "Counter" { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Signal_5 { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Signal_6 { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Signal_7 { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Signal_8 { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Signal_9 { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Signal_10 { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Signal_11 { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Signal_12 { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Signal_13 { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Signal_14 { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      Signal_15 { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      DInt_1 { ExternalWritable := 'False'} : DInt;
+      DInt_2 { ExternalWritable := 'False'} : DInt;
+      DInt_3 { ExternalWritable := 'False'} : DInt;
+   END_VAR
+
+   VAR_OUTPUT 
+      "Type" { ExternalWritable := 'False'} : Array[0..4] of Char := ['S', 'P', 'C', 'L', 'P'];
+      Count { ExternalWritable := 'False'} : DInt;
+   END_VAR
+
+   VAR 
+      CountProd {InstructionName := 'IEC_UDCOUNTER'; LibVersion := '1.0'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : IEC_UDCOUNTER;
+   END_VAR
+
+   VAR_TEMP 
+      PV : Int;
+      HabCounter : Bool;
+   END_VAR
+
+
+BEGIN
+	#CountProd.R := "FirstScan";
+	
+	IF #Run THEN
+	    "#CountProd".CTU(CU := #Counter,
+	                     PV := #PV,
+	                     R := "FirstScan",
+	                     CV => #Count);
+	END_IF;
+	
+END_FUNCTION_BLOCK
+
