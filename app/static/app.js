@@ -355,14 +355,14 @@ function renderTv() {
     tvIndex = 0;
     stage.innerHTML = '<p class="tv-empty">Nenhuma máquina cadastrada.<br><span>Cadastre uma máquina em <a href="/Configuracoes" data-route="/Configuracoes">Configurações</a> para o painel começar a monitorar.</span></p>';
     position.textContent = '';
-    tvButtons();
+    updateTvControls();
     return;
   }
   if (tvIndex >= lastItems.length) tvIndex = 0;
   const entry = lastItems[tvIndex];
   stage.innerHTML = tvSlide(entry[0], entry[1]);
   position.textContent = (tvIndex + 1) + ' / ' + lastItems.length;
-  tvButtons();
+  updateTvControls();
 }
 
 function restartTvProgress() {
@@ -376,7 +376,9 @@ function restartTvProgress() {
 function startTv() {
   if (tvTimer || tvPaused || lastItems.length < 2) return;
   tvTimer = setInterval(function () {
-    tvStep(1);
+    tvIndex += 1;
+    renderTv();
+    restartTvProgress();
   }, TV_SECONDS * 1000);
 }
 
@@ -387,29 +389,36 @@ function stopTv() {
   }
 }
 
-// The deck behaves like the one on a video cassette player: back and forward move by
-// hand and restart the countdown, and the two transport buttons are enabled by the
-// state they lead to, so the one that would do nothing is the one that is off.
-function tvStep(delta) {
-  if (!lastItems.length) return;
+function updateTvControls() {
+  const several = lastItems.length > 1;
+  ['tv-back', 'tv-hold', 'tv-play', 'tv-next'].forEach(function (id) {
+    document.querySelector('#' + id).disabled = !several;
+  });
+  // The player shows which one is in force, instead of one button that toggles.
+  document.querySelector('#tv-hold').classList.toggle('on', tvPaused);
+  document.querySelector('#tv-play').classList.toggle('on', !tvPaused && several);
+}
+
+function setTvPaused(paused) {
+  tvPaused = paused;
+  document.body.classList.toggle('tv-paused', paused);
+  updateTvControls();
+  if (paused) {
+    stopTv();
+    return;
+  }
+  restartTvProgress();
+  startTv();
+}
+
+function stepTv(delta) {
+  if (lastItems.length < 2) return;
   tvIndex = (tvIndex + delta + lastItems.length) % lastItems.length;
   renderTv();
+  // A slide asked for by hand gets its whole time on screen.
+  stopTv();
   restartTvProgress();
-}
-
-function tvButtons() {
-  const many = lastItems.length > 1;
-  document.querySelector('#tv-back').disabled = !many;
-  document.querySelector('#tv-forward').disabled = !many;
-  document.querySelector('#tv-pause').disabled = !many || tvPaused;
-  document.querySelector('#tv-play').disabled = !many || !tvPaused;
-}
-
-function tvSetPaused(paused) {
-  tvPaused = paused;
-  document.body.classList.toggle('tv-paused', tvPaused);
-  if (tvPaused) stopTv();
-  tvButtons();
+  startTv();
 }
 
 // Every caller repaints "the current page", so the plant route is handled here.
@@ -704,7 +713,7 @@ function applyRoute(options) {
 
   if (tv && entering) {
     tvIndex = 0;
-    tvSetPaused(false);
+    setTvPaused(false);
   }
   renderCards();
   if (tv) {
@@ -972,14 +981,10 @@ for (const id of ['trend-close', 'trend-close-action']) {
 document.querySelector('#trend-prev').onclick = function () { stepTrend(-1); };
 document.querySelector('#trend-next').onclick = function () { stepTrend(1); };
 
-document.querySelector('#tv-pause').onclick = function () { tvSetPaused(true); };
-document.querySelector('#tv-play').onclick = function () {
-  tvSetPaused(false);
-  restartTvProgress();
-  startTv();
-};
-document.querySelector('#tv-back').onclick = function () { tvStep(-1); };
-document.querySelector('#tv-forward').onclick = function () { tvStep(1); };
+document.querySelector('#tv-back').onclick = function () { stepTv(-1); };
+document.querySelector('#tv-next').onclick = function () { stepTv(1); };
+document.querySelector('#tv-hold').onclick = function () { setTvPaused(true); };
+document.querySelector('#tv-play').onclick = function () { setTvPaused(false); };
 
 document.querySelector('#branding-form').onsubmit = async function (event) {
   event.preventDefault();

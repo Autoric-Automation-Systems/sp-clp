@@ -4,9 +4,11 @@ import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 import uvicorn
+import app as app_package
 from app import main as main_module
 from app.branding import remove_logos
 from app.models import MachineInput
@@ -772,14 +774,15 @@ def test_the_tv_panel_rotates_and_keeps_a_way_out():
     page = TestClient(app).get("/").text
     assert 'id="tv-stage"' in page
     assert 'id="tv-progress"' in page
-    assert 'id="tv-pause"' in page
     # A discreet way back to the normal panel.
     assert 'data-route="/"' in page
     assert "Sair do modo TV" in page
-    # The developer's mark travels on the band, from the same footer as before.
-    assert 'class="tv-credit"' in page
-    assert "Desenvolvido por" in page
-    assert "logo-dev.png" in page
+    # The developer's mark: the logo without a link, the slogan, the addresses in
+    # words. A remote control cannot click, so a band of links would be decoration.
+    assert 'class="tv-brand"' in page
+    assert "Você imagina, nós fazemos funcionar" in page
+    assert "www.autoric.com.br" in page
+    assert "instagram/@autoricbr" in page
 
     script = TestClient(app).get("/static/app.js").text
     assert "TV_SECONDS = 5" in script
@@ -796,6 +799,10 @@ def test_the_tv_panel_rotates_and_keeps_a_way_out():
     assert "body.tv .topbar{display:none}" in css
     assert "body.tv footer{position:fixed" in css
     assert "@keyframes tv-progress{" in css
+    # A band of links on a wall is decoration: the TV footer writes the brand
+    # instead, and the linked logo belongs to the normal panel only.
+    assert "body.tv .footer-links{display:none}" in css
+    assert "body.tv .authoric-link{display:none}" in css
     # On a wall nobody hovers, so the TV card writes the name of each signal.
     assert ".tv-state-name{" in css
     assert ".tv-state.unknown .tv-state-icon{border:3px dashed" in css
@@ -804,11 +811,15 @@ def test_the_tv_panel_rotates_and_keeps_a_way_out():
 def test_the_tv_controls_are_a_videocassette_deck():
     """The operator already knows a cassette deck: back, pause, play, forward."""
     page = TestClient(app).get("/").text
-    for button in ("tv-back", "tv-pause", "tv-play", "tv-forward"):
+    for button in ("tv-back", "tv-hold", "tv-play", "tv-next"):
         assert f'id="{button}"' in page
     # Order on screen is the order of the tape, not the order of the code.
-    assert page.index('id="tv-back"') < page.index('id="tv-pause"') < page.index('id="tv-play"') < page.index('id="tv-forward"')
-
+    assert (
+        page.index('id="tv-back"')
+        < page.index('id="tv-hold"')
+        < page.index('id="tv-play"')
+        < page.index('id="tv-next"')
+    )
     icons = TestClient(app).get("/static/icons.js").text
     for glyph in ("skip-back", "pause", "skip-forward"):
         assert f'"{glyph}":' in icons
@@ -817,16 +828,30 @@ def test_the_tv_controls_are_a_videocassette_deck():
     assert 'data-icon="skip-forward"' in page
 
     script = TestClient(app).get("/static/app.js").text
-    assert "function tvStep" in script
-    assert "function tvButtons" in script
-    assert "function tvSetPaused" in script
+    assert "function stepTv" in script
+    assert "function setTvPaused" in script
+    assert "function updateTvControls" in script
     # Backward from the first slide wraps to the last one, like a ring.
-    assert "% tvItems.length" in script or "% lastItems.length" in script
-    # The deck follows the state: running shows pause, paused shows play.
-    assert "'#tv-pause'" in script
+    assert "% lastItems.length" in script
+    # The player follows the state: the button in force is the lit one, so a
+    # transparent remote shows what the wall is doing.
+    assert "'#tv-hold'" in script
     assert "'#tv-play'" in script
+    assert "classList.toggle('on'" in script
     # Arriving at the TV address always starts playing, even after a pause.
-    assert "tvSetPaused(false)" in script
+    assert "setTvPaused(false)" in script
+    # Each button drives the deck, and a slide asked for by hand gets its whole
+    # time on screen.
+    assert "document.querySelector('#tv-back').onclick = function () { stepTv(-1); };" in script
+    assert "document.querySelector('#tv-next').onclick = function () { stepTv(1); };" in script
+    assert "document.querySelector('#tv-hold').onclick = function () { setTvPaused(true); };" in script
+    assert "document.querySelector('#tv-play').onclick = function () { setTvPaused(false); };" in script
+
+    css = TestClient(app).get("/static/styles.css").text
+    # The tape bar stops and turns amber while paused.
+    assert "body.tv-paused .tv-progress{animation-play-state:paused;background:#ffb703}" in css
+    # A button that is off does not light up under the cursor.
+    assert ".tv-control:disabled:hover" in css
 
 
 def test_the_tv_card_fits_a_short_screen():
@@ -836,12 +861,26 @@ def test_the_tv_card_fits_a_short_screen():
     with the browser open shrinks the card instead of pushing it off the top.
     """
     css = TestClient(app).get("/static/styles.css").text
+    # The stage is the window minus the brand band, and it reserves room at the
+    # top, so the plant · area line is never the first thing to leave the screen.
     assert "height:calc(100vh - var(--tv-band))" in css
-    assert "padding:clamp(18px,5vh,64px) 5vw clamp(12px,3vh,40px)" in css
-    assert "font:700 clamp(30px,min(6.4vw,8vh),110px)/1.02" in css
-    assert "gap:clamp(10px,2.4vh,34px)" in css
-    assert "width:clamp(46px,min(6.4vw,8.5vh),140px)" in css
-    assert "font:700 clamp(36px,min(8.5vw,11vh),160px)/1" in css
+    assert "padding:clamp(18px,5vh,60px) 5vw clamp(14px,3.5vh,40px)" in css
+    # vmin is the shorter side, so a short window shrinks the type.
+    assert "font:700 clamp(28px,6.2vmin,108px)/1.02" in css
+    assert "width:clamp(48px,6.2vmin,138px)" in css
+    assert "font:700 clamp(34px,8.4vmin,158px)/1" in css
+    assert "gap:clamp(9px,2.1vh,26px)" in css
+
+
+def test_the_tv_mode_is_in_the_menu():
+    page = TestClient(app).get("/").text
+    assert 'data-route="/TVPanel"' in page
+    assert "Modo TV" in page
+    assert 'data-icon="tv"' in page
+
+    script = TestClient(app).get("/static/app.js").text
+    # The route is in the menu, so its button lights up while the panel runs.
+    assert "if (tv) return '/TVPanel';" in script
 
 
 def test_the_status_endpoint_does_not_write_history():
@@ -1223,8 +1262,23 @@ def test_dashboard_icons_are_vendored_and_used():
     assert icons.status_code == 200, "the vendored icon module is not served"
     assert "/static/icons.js" in client.get("/").text
 
-    defined = set(re.findall(r'^\s{2}"([a-z0-9-]+)":', icons.text, re.MULTILINE))
+    shipped = re.findall(r'^\s{2}"([a-z0-9-]+)":', icons.text, re.MULTILINE)
+    defined = set(shipped)
     assert "circle-check" in defined and "lock" in defined
+    # A name asked for twice would ship the same glyph twice, and the last one wins
+    # silently, so the file is checked for repeats rather than only for coverage.
+    assert len(shipped) == len(defined), "the vendored icon module repeats a name"
+
+    asked = re.findall(
+        r'^    "([a-z0-9-]+)",$',
+        (Path(app_package.__file__).resolve().parents[1] / "scripts" / "build_icons.py").read_text(
+            encoding="utf-8"
+        ),
+        re.MULTILINE,
+    )
+    assert len(asked) == len(set(asked)), "the icon generator asks for a name twice"
+    # The generator is the single source of the list: regenerating changes nothing.
+    assert defined == set(asked), f"unexpected: {sorted(defined ^ set(asked))}"
 
     used: set[str] = set()
     for source in (client.get("/static/app.js").text, client.get("/").text):
