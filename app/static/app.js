@@ -197,6 +197,12 @@ function hourlySection(machine) {
   return `<div class="hourly"><button type="button" class="chart-open" data-chart-id="${machine.id}"><span class="toggle-label">${icon('clock')}Contagens por hora</span>${icon('arrow-right')}</button></div>`;
 }
 
+function trendSection(machine) {
+  // How long the machine spent in each state is not the same subject as how much
+  // it produced, so it gets its own window instead of sharing the counts one.
+  return `<div class="card-action"><button type="button" class="trend-open" data-trend-id="${machine.id}"><span class="toggle-label">${icon('trending-up')}Tendência dos sinais</span>${icon('arrow-right')}</button></div>`;
+}
+
 // Everything that has no block of its own: the free BOOLs and the three DInts.
 // The five standard signals are all shown as blocks above.
 function listedSignals(status) {
@@ -229,7 +235,7 @@ function signalsSection(machine, status) {
 function machineCard(machine, status) {
   // The counter label is part of the contract, so the block names it directly.
   const connection = status.connected ? 'online' : 'offline';
-  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">${icon('cpu')}DB${esc(machine.db_number)}</span><h3>${esc(machine.name)}</h3><p class="meta">${esc(machine.ip)}</p></div><span class="connection-pill ${connection}">${icon(connection === 'online' ? 'wifi' : 'wifi-off')}${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(firstOfKind(status, 'auto'))}${statusBlock(firstOfKind(status, 'run'))}${statusBlock(firstOfKind(status, 'fault'))}${statusBlock(firstOfKind(status, 'safety'))}${statusBlock(firstOfKind(status, 'counter'))}</div><div class="count"><span class="count-label">${icon('gauge')}CONTADOR ATUAL</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado às ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${signalsSection(machine, status)}${hourlySection(machine)}</article>`;
+  return `<article class="machine-card"><div class="machine-card-head"><div><span class="machine-kicker">${icon('cpu')}DB${esc(machine.db_number)}</span><h3>${esc(machine.name)}</h3><p class="meta">${esc(machine.ip)}</p></div><span class="connection-pill ${connection}">${icon(connection === 'online' ? 'wifi' : 'wifi-off')}${status.connected ? 'Online' : 'Offline'}</span></div><div class="state-grid">${statusBlock(firstOfKind(status, 'auto'))}${statusBlock(firstOfKind(status, 'run'))}${statusBlock(firstOfKind(status, 'fault'))}${statusBlock(firstOfKind(status, 'safety'))}${statusBlock(firstOfKind(status, 'counter'))}</div><div class="count"><span class="count-label">${icon('gauge')}CONTADOR ATUAL</span><b>${status.count ?? '-'}</b><span>${status.timestamp ? 'Atualizado às ' + new Date(status.timestamp).toLocaleTimeString() : 'Aguardando leitura do CLP'}</span></div>${signalsSection(machine, status)}${trendSection(machine)}${hourlySection(machine)}</article>`;
 }
 
 function renderAreas(items) {
@@ -292,6 +298,9 @@ async function refresh() {
 function bindToggles() {
   document.querySelectorAll('.chart-open').forEach(function (button) {
     button.onclick = function () { openChart(Number(button.dataset.chartId)); };
+  });
+  document.querySelectorAll('.trend-open').forEach(function (button) {
+    button.onclick = function () { openTrend(Number(button.dataset.trendId)); };
   });
   document.querySelectorAll('.signals-toggle').forEach(function (button) {
     button.onclick = function () { toggleSignals(Number(button.dataset.signalsId)); };
@@ -421,6 +430,113 @@ function stepChart(delta) {
   if (!chartData) return;
   chartDay = shiftDay(chartData.day, delta);
   loadChart();
+}
+
+// How long a machine spent in each state, over a day. Its own window, because
+// production is a number and this is a share of the time.
+let trendMachine = null;
+let trendDay = null;
+let trendData = null;
+
+function humanDuration(seconds) {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return minutes + ' min';
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? hours + 'h' + String(rest).padStart(2, '0') : hours + 'h';
+}
+
+function segmentSeconds(segment) {
+  return Math.max(0, (new Date(segment.end) - new Date(segment.start)) / 1000);
+}
+
+function percentLabel(seconds, percent) {
+  // A minute of a day is 0.07%, which rounds to 0 and reads as never. Saying it is
+  // under one percent keeps a state that did happen from looking absent.
+  if (seconds > 0 && percent === 0) return '<1%';
+  return percent + '%';
+}
+
+function trendRow(signal, daySeconds) {
+  // The words come from the same table the card uses, so a bit means the same
+  // thing in both places.
+  const words = BIT_WORDS[signal.kind] || ['Desligado', 'Ligado'];
+  const hue = STATE_HUES[signal.kind] || 'blue';
+  const segments = (signal.segments || []).map(function (segment) {
+    const state = segment.value === null ? 'unknown' : (segment.value ? 'on' : 'off');
+    const classes = state === 'on' ? 'on on-' + hue : state;
+    const label = segment.value === null ? 'Sem leitura' : words[segment.value ? 1 : 0];
+    const when = label + ', ' + segment.start.slice(11, 16) + ' às ' + segment.end.slice(11, 16);
+    const width = (segmentSeconds(segment) / daySeconds) * 100;
+    return `<span class="trend-segment ${classes}" style="width:${width.toFixed(3)}%" title="${esc(when)}" aria-label="${esc(when)}"></span>`;
+  }).join('');
+  const parts = [
+    words[1] + ' ' + humanDuration(signal.on_seconds) + ' · ' + percentLabel(signal.on_seconds, signal.on_percent),
+    words[0] + ' ' + humanDuration(signal.off_seconds) + ' · ' + percentLabel(signal.off_seconds, signal.off_percent),
+  ];
+  if (signal.unknown_seconds > 0) {
+    parts.push(
+      'Sem leitura ' + humanDuration(signal.unknown_seconds) + ' · ' +
+      percentLabel(signal.unknown_seconds, signal.unknown_percent)
+    );
+  }
+  return `<div class="trend-row"><p class="trend-head"><span class="trend-name">${esc(signal.label)}</span><span class="trend-address">${esc(signal.address)}</span></p><div class="trend-track">${segments}</div><p class="trend-totals">${parts.join(' · ')}</p></div>`;
+}
+
+function renderTrend() {
+  const title = document.querySelector('#trend-title');
+  title.textContent = trendMachine ? trendMachine.name : 'Tendência';
+  const body = document.querySelector('#trend-body');
+  if (!trendData) {
+    body.innerHTML = '';
+    return;
+  }
+  const daySeconds = trendData.day_seconds || 86400;
+  document.querySelector('#trend-day').textContent = formatDay(trendData.day, trendData.today);
+  // The elapsed part is the denominator of the percentages, so it is on screen.
+  document.querySelector('#trend-total').textContent =
+    humanDuration(trendData.elapsed_seconds) + ' decorridas';
+  body.innerHTML = (trendData.signals || []).map(function (signal) {
+    return trendRow(signal, daySeconds);
+  }).join('');
+  document.querySelector('#trend-prev').disabled = trendData.day <= trendData.first_day;
+  document.querySelector('#trend-next').disabled = trendData.day >= trendData.last_day;
+}
+
+async function loadTrend() {
+  const query = trendDay ? '?day=' + encodeURIComponent(trendDay) : '';
+  const response = await request('/api/machines/' + trendMachine.id + '/signals-day' + query);
+  const target = document.querySelector('#trend-message');
+  if (!response.ok) {
+    target.textContent = 'Não foi possível carregar a tendência deste dia.';
+    return;
+  }
+  target.textContent = '';
+  trendData = await response.json();
+  trendDay = trendData.day;
+  renderTrend();
+}
+
+async function openTrend(machineId) {
+  const machine = cachedMachines.find(function (item) { return item.id === machineId; });
+  if (!machine) return;
+  trendMachine = machine;
+  trendDay = null;
+  trendData = null;
+  document.querySelector('#trend-body').innerHTML = '';
+  document.querySelector('#trend-dialog').showModal();
+  await loadTrend();
+}
+
+function stepTrend(delta) {
+  if (!trendData) return;
+  trendDay = shiftDay(trendData.day, delta);
+  loadTrend();
+}
+
+function closeTrend() {
+  document.querySelector('#trend-dialog').close();
+  trendData = null;
 }
 
 async function setupStatus() {
@@ -733,6 +849,12 @@ for (const id of ['chart-close', 'chart-close-action']) {
 }
 document.querySelector('#chart-prev').onclick = function () { stepChart(-1); };
 document.querySelector('#chart-next').onclick = function () { stepChart(1); };
+
+for (const id of ['trend-close', 'trend-close-action']) {
+  document.querySelector('#' + id).onclick = closeTrend;
+}
+document.querySelector('#trend-prev').onclick = function () { stepTrend(-1); };
+document.querySelector('#trend-next').onclick = function () { stepTrend(1); };
 
 document.querySelector('#branding-form').onsubmit = async function (event) {
   event.preventDefault();

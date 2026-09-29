@@ -64,6 +64,15 @@ class Storage:
                     label TEXT NOT NULL,
                     PRIMARY KEY (machine_id, address)
                 );
+                CREATE TABLE IF NOT EXISTS signal_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    machine_id INTEGER NOT NULL REFERENCES machines(id),
+                    address TEXT NOT NULL,
+                    value INTEGER NOT NULL,
+                    changed_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS signal_events_window
+                    ON signal_events(machine_id, address, changed_at);
                 """
             )
 
@@ -217,6 +226,107 @@ class Storage:
         if row is None or row["first"] is None:
             return None
         return row["first"], row["last"]
+
+    def save_transitions(
+        self, machine_id: int, bits: dict[str, bool], changed_at: datetime | None = None
+    ) -> int:
+        """One row per signal that moved, which is what the day chart is drawn from.
+
+        Storing the change instead of every reading keeps the table small: a bit
+        that stays where it is writes nothing, so a machine that runs all day costs
+        one row, not seventeen thousand.
+        """
+        moment = changed_at or datetime.now(timezone.utc)
+        written = 0
+        with self.connect() as connection:
+            previous = {
+                row["address"]: bool(row["value"])
+                for row in connection.execute(
+                    "SELECT e.address, e.value FROM signal_events e JOIN ("
+                    "  SELECT address, MAX(id) AS last_id FROM signal_events"
+                    "  WHERE machine_id = ? GROUP BY address) last ON e.id = last.last_id",
+                    (machine_id,),
+                )
+            }
+            for address, value in bits.items():
+                if address in previous and previous[address] is value:
+                    continue
+                connection.execute(
+                    "INSERT INTO signal_events(machine_id, address, value, changed_at)"
+                    " VALUES (?, ?, ?, ?)",
+                    (machine_id, address, 1 if value else 0, moment.isoformat()),
+                )
+                written += 1
+        return written
+
+    def signal_events(
+        self, machine_id: int, addresses: list[str], start: datetime, end: datetime
+    ) -> dict[str, list[tuple[datetime, bool]]]:
+        """Events per address inside the window, each led by the last one before it.
+
+        The event before the window is what tells the chart which state the signal
+        was already in at midnight; without it the day would start blank until the
+        first change.
+        """
+        found: dict[str, list[tuple[datetime, bool]]] = {address: [] for address in addresses}
+        with self.connect() as connection:
+            for address in addresses:
+                before = connection.execute(
+                    "SELECT value, changed_at FROM signal_events WHERE machine_id = ?"
+                    " AND address = ? AND changed_at < ?"
+                    " ORDER BY changed_at DESC, id DESC LIMIT 1",
+                    (machine_id, address, start.isoformat()),
+                ).fetchone()
+                if before is not None:
+                    found[address].append(
+                        (datetime.fromisoformat(before["changed_at"]), bool(before["value"]))
+                    )
+            for row in connection.execute(
+                "SELECT address, value, changed_at FROM signal_events WHERE machine_id = ?"
+                " AND changed_at >= ? AND changed_at < ? ORDER BY changed_at, id",
+                (machine_id, start.isoformat(), end.isoformat()),
+            ):
+                found[row["address"]].append(
+                    (datetime.fromisoformat(row["changed_at"]), bool(row["value"]))
+                )
+        return found
+
+    def sample_times(self, machine_id: int, start: datetime, end: datetime) -> list[datetime]:
+        """When the recorder last read this machine, one step before the window too.
+
+        The reading is the heartbeat: the day chart trusts a state only between two
+        readings close enough to each other, so this is what separates a machine
+        that stopped from a panel that was not looking.
+        """
+        with self.connect() as connection:
+            before = connection.execute(
+                "SELECT sampled_at FROM count_samples WHERE machine_id = ? AND sampled_at < ?"
+                " ORDER BY sampled_at DESC LIMIT 1",
+                (machine_id, start.isoformat()),
+            ).fetchone()
+            inside = connection.execute(
+                "SELECT sampled_at FROM count_samples WHERE machine_id = ?"
+                " AND sampled_at >= ? AND sampled_at < ? ORDER BY sampled_at",
+                (machine_id, start.isoformat(), end.isoformat()),
+            )
+            times = ([datetime.fromisoformat(before["sampled_at"])] if before else [])
+            times.extend(datetime.fromisoformat(row["sampled_at"]) for row in inside)
+        return times
+
+    def prune(self, before: datetime) -> int:
+        """Drop history older than the window the panel keeps, and say how much."""
+        removed = 0
+        with self.connect() as connection:
+            for table, column in (
+                ("count_samples", "sampled_at"),
+                ("hourly_counts", "hour_start"),
+                ("signal_events", "changed_at"),
+            ):
+                cursor = connection.execute(
+                    f"DELETE FROM {table} WHERE {column} < ?", (before.isoformat(),)
+                )
+                removed += cursor.rowcount or 0
+        return removed
 
     def signal_labels(self, machine_id: int) -> dict[str, str]:
         with self.connect() as connection:

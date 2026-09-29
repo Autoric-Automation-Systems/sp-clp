@@ -183,6 +183,33 @@ O botão **Contagens por hora** de cada máquina abre uma janela com o gráfico 
 - A resposta traz `day`, `today`, `first_day`, `last_day` e `slots` (as horas do dia, com quantidade zero onde não houve contagem)
 - Um dia com mudança de horário de verão tem 23 ou 25 horas, e o número de `slots` acompanha isso
 
+## Tendência dos sinais
+
+O botão **Tendência dos sinais** abre uma janela **separada da de contagens**: quanto a máquina produziu é um número, e quanto tempo ela passou produzindo, parada ou em falha é outro assunto. São quatro barras horizontais, uma por sinal padrão — `AUTO`, `RUN`, `FAULT` e `SAFETY` —, cada uma com o dia inteiro e o tempo de cada estado em horas e em porcentagem.
+
+```
+AUTO     ████████████████████████░░░░░░░░  Automático 22h30 · 94% · Sem leitura 1h30 · 6%
+RUN      ██████████░░░░░░██████░░░░░░░░░░  Produzindo 10h30 · 44% · Parado 12h · 50% · Sem leitura 1h30 · 6%
+```
+
+- **A barra cinza hachurada é "sem leitura"**, e é o ponto principal da tela: um trecho em que nenhum CLP foi lido não é a mesma coisa que a máquina parada. Sem isso o cliente leria um painel desligado como "máquina parada o dia inteiro"
+- O estado só é dado como conhecido **entre duas leituras próximas** (até `20 s`, ou seja três ciclos do gravador). Entre uma leitura e a próxima distante, o trecho fica como sem leitura; a leitura mais recente ainda responde pelo instante atual, que é o que faz o dia de hoje chegar até agora
+- As porcentagens são do **trecho do dia que já decorreu**: num dia passado, das 24 h; hoje, de agora até a meia-noite de hoje. Por isso o cartão mostra "14h29 decorridas" ao lado do dia
+- Os estados usam as palavras do contrato e a cor do card: `AUTO` azul, `RUN` e `SAFETY` verdes, `FAULT` vermelho
+- `GET /api/machines/{id}/signals-day?day=AAAA-MM-DD` devolve `day`, `today`, `first_day`, `last_day`, `elapsed_seconds`, `day_seconds` e um item por sinal, com `segments` (os trechos, em hora local da máquina), `on_seconds`, `off_seconds`, `unknown_seconds` e as três porcentagens
+- O `COUNTER` fica de fora: é pulso de diagnóstico, e uma barra dele seria ruído
+
+## Histórico que o painel grava
+
+Uma thread do próprio servidor lê cada máquina cadastrada a cada **5 segundos**, para o histórico **não depender de um navegador estar aberto**. Antes isso era efeito colateral do `GET /api/machines/{id}/status`, ou seja, fechar o painel parava de gravar; agora o endpoint de status é só leitura e quem grava é o gravador.
+
+- **Só leitura no CLP.** O gravador lê e escreve no banco; nada nele escreve no PLC
+- A contagem é gravada como delta, com a mesma política de sempre: valor que diminuiu inicia nova linha de base e não vira produção negativa
+- Os sinais viram uma linha **por mudança**, não por leitura (`signal_events`): um bit que não se mexe não gera linha, então um dia inteiro custa algumas centenas de registros em vez de 17 mil
+- O intervalo se troca por `SP_CLP_POLL_SECONDS` (padrão `5`, mínimo `1`); o gravador nunca morre por causa de um CLP fora do ar, ele tenta no ciclo seguinte
+- **Retenção de 7 dias**, para contagens e para sinais: a limpeza roda no arranque e a cada hora. A navegação por dia para sozinha no primeiro dia que ainda existe
+- `app/signals.py` monta o dia a partir dos eventos e das leituras, sem tocar em banco nem em relógio, para dar para testar sem CLP
+
 ## Endereços
 
 O dashboard mostra um único card com todas as plantas e o status de cada máquina. Cada planta responde no seu próprio endereço, derivado do nome:
@@ -197,7 +224,9 @@ A página `Ajuda` traz a documentação de uso: acesso, cadastro, rótulos de si
 
 - `app/main.py`: API FastAPI e rotas do dashboard
 - `app/plc.py`: protocolo, parser, simulador e adaptador Snap7
-- `app/storage.py`: SQLite, amostras e totais horários
+- `app/storage.py`: SQLite, amostras, eventos dos sinais e totais horários
+- `app/recorder.py`: a thread que lê os CLPs de 5 em 5 segundos e limpa o histórico velho
+- `app/signals.py`: o dia de um sinal a partir dos eventos gravados
 - `app/branding.py`: nome da empresa e logotipo do cabeçalho
 - `app/access.py`: endereços de acesso e configuração do bind
 - `app/slugs.py`: nome da planta convertido em endereço

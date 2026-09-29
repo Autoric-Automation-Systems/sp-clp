@@ -142,6 +142,46 @@ class HourlyDay(BaseModel):
     slots: list[HourlySlot]
 
 
+class SignalSegment(BaseModel):
+    """One stretch of a day with a signal in one state.
+
+    ``value`` is None where nothing was being read, which the chart has to show
+    apart from the bit being 0. The two instants are in the machine time zone, with
+    the offset, like the hourly slots.
+    """
+
+    start: str
+    end: str
+    value: bool | None
+
+
+class SignalDayStats(BaseModel):
+    address: str
+    label: str
+    kind: str
+    on_seconds: int
+    off_seconds: int
+    unknown_seconds: int
+    on_percent: int
+    off_percent: int
+    unknown_percent: int
+    segments: list[SignalSegment]
+
+
+class SignalDayReport(BaseModel):
+    machine_id: int
+    day: str
+    today: str
+    first_day: str
+    last_day: str
+    # The part of the day that already happened: the percentages are of this, so
+    # today is measured against now instead of against 24 hours.
+    elapsed_seconds: int
+    # How long the whole day is, so the bar can leave the rest of it in view.
+    day_seconds: int
+    signals: list[SignalDayStats]
+
+
 class MachineStatus(BaseModel):
     machine_id: int
     connected: bool

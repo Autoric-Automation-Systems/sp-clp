@@ -4,7 +4,8 @@ import logging
 import secrets
 import sys
 import time
-from datetime import date, timedelta
+from contextlib import asynccontextmanager
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -27,6 +28,9 @@ from .models import (
     BrandingInput,
     HourlyDay,
     HourlySlot,
+    SignalDayReport,
+    SignalDayStats,
+    SignalSegment,
     LoginRequest,
     LogoUpload,
     MachineInput,
@@ -44,6 +48,7 @@ from .plc import (
     DEFAULT_RACK,
     DEFAULT_SLOT,
     EDITABLE_ADDRESSES,
+    READ_ERRORS,
     SIGNAL_LAYOUT,
     FakePLCClient,
     FakePLCProbeClient,
@@ -59,14 +64,33 @@ from .plc import (
     signal_label,
 )
 from .recovery import apply_reset, parse_options
+from .recorder import RECORDED_KINDS, start as start_recorder
 from .security import hash_password, verify_password
+from .signals import build_day
 from .slugs import RESERVED_PAGES, plant_name_error, plant_slugs, slugify
 from .storage import Storage
 from .timezones import day_bounds, local_day, resolve_zone, today_in
 
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="SP-CLP Dashboard", version="0.1.0")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Keep reading the PLCs for as long as the application is up.
+
+    The history has to be written whether or not anybody has the panel open, so it
+    does not depend on a browser being left on the dashboard.
+    """
+
+    _thread, halt = start_recorder(storage, client_for)
+    try:
+        yield
+    finally:
+        halt.set()
+
+
+app = FastAPI(title="SP-CLP Dashboard", version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 storage = Storage()
 plc_clients: dict[tuple[str, int, int], PLCClient] = {}
@@ -462,13 +486,17 @@ def signal_value(spec: SignalSpec, reading: PLCReading) -> bool | int:
 
 @app.get("/api/machines/{machine_id}/status", response_model=MachineStatus)
 def machine_status(machine_id: int) -> MachineStatus:
+    """The live state of one machine, for the card.
+
+    Read only on purpose: the history is written by the recorder, so a page being
+    open or closed cannot change what ends up stored.
+    """
     machine = storage.get_machine(machine_id)
     if machine is None:
         raise HTTPException(status_code=404, detail=MACHINE_NOT_FOUND)
     labels = storage.signal_labels(machine_id)
     try:
         reading = client_for(machine).read(machine["db_number"])
-        storage.save_sample(machine_id, reading.count, reading.timestamp)
         bits = reading.bits
         return MachineStatus(
             machine_id=machine_id, connected=True, stale=False,
@@ -477,7 +505,7 @@ def machine_status(machine_id: int) -> MachineStatus:
             count=reading.count,
             signals=build_signals(labels, reading),
         )
-    except (ConnectionError, OSError, RuntimeError, ValueError, ImportError) as error:
+    except READ_ERRORS as error:
         # Polled every few seconds per machine, so keep this at debug level.
         logger.debug("Maquina %s (%s) indisponivel: %s", machine_id, machine["ip"], describe_error(error))
         return MachineStatus(
@@ -485,6 +513,81 @@ def machine_status(machine_id: int) -> MachineStatus:
             auto=None, run=None, fault=None, safety=None, count=None,
             signals=build_signals(labels, None),
         )
+
+
+@app.get("/api/machines/{machine_id}/signals-day", response_model=SignalDayReport)
+def signals_day(machine_id: int, day: str | None = Query(default=None)) -> SignalDayReport:
+    """The four standard signals across one day, as stretches of each state.
+
+    A different screen from the hourly counts on purpose: production is a number,
+    and how long a machine spent running, stopped or in fault is a different
+    question with a different shape.
+    """
+    machine = storage.get_machine(machine_id)
+    if machine is None:
+        raise HTTPException(status_code=404, detail=MACHINE_NOT_FOUND)
+    zone_name = machine["timezone"]
+    today = today_in(zone_name)
+    if day is None:
+        day = today
+    else:
+        try:
+            date.fromisoformat(day)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Data inválida; use AAAA-MM-DD") from None
+
+    start, end = day_bounds(day, zone_name)
+    zone = resolve_zone(zone_name)
+    now = datetime.now(timezone.utc)
+    labels = storage.signal_labels(machine_id)
+    specs = [spec for spec in SIGNAL_LAYOUT if spec.kind in RECORDED_KINDS]
+    events = storage.signal_events(machine_id, [spec.address for spec in specs], start, end)
+    # The readings are the heartbeat: they say when the panel was actually looking.
+    samples = storage.sample_times(machine_id, start, end)
+
+    signals: list[SignalDayStats] = []
+    elapsed = 0
+    for spec in specs:
+        stats = build_day(spec.address, samples, events.get(spec.address, []), start, end, now)
+        elapsed = stats.elapsed_seconds
+        signals.append(
+            SignalDayStats(
+                address=spec.address,
+                label=signal_label(spec, labels),
+                kind=spec.kind,
+                on_seconds=stats.on_seconds,
+                off_seconds=stats.off_seconds,
+                unknown_seconds=stats.unknown_seconds,
+                on_percent=stats.percent(stats.on_seconds),
+                off_percent=stats.percent(stats.off_seconds),
+                unknown_percent=stats.percent(stats.unknown_seconds),
+                segments=[
+                    SignalSegment(
+                        start=segment.start.astimezone(zone).isoformat(),
+                        end=segment.end.astimezone(zone).isoformat(),
+                        value=segment.value,
+                    )
+                    for segment in stats.segments
+                ],
+            )
+        )
+
+    span = storage.hourly_range(machine_id)
+    if span is None:
+        first_day = last_day = today
+    else:
+        first_day = local_day(span[0], zone_name)
+        last_day = max(local_day(span[1], zone_name), today)
+    return SignalDayReport(
+        machine_id=machine_id,
+        day=day,
+        today=today,
+        first_day=first_day,
+        last_day=last_day,
+        elapsed_seconds=elapsed,
+        day_seconds=int((end - start).total_seconds()),
+        signals=signals,
+    )
 
 
 @app.get("/api/machines/{machine_id}/hourly-counts", response_model=HourlyDay)

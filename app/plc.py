@@ -83,6 +83,10 @@ READ_SIZE = COUNT_OFFSET + COUNT_SIZE
 DEFAULT_RACK = 0
 DEFAULT_SLOT = 1
 
+# What a failed read looks like. An unreachable PLC raises whatever the socket and
+# the snap7 wrapper decide, so the callers catch the whole family in one name.
+READ_ERRORS = (ConnectionError, OSError, RuntimeError, ValueError, ImportError)
+
 
 def describe_error(error: BaseException) -> str:
     """Return a readable message; snap7 raises RuntimeError with a raw bytes argument."""

@@ -3,7 +3,7 @@ import logging
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import uvicorn
@@ -413,6 +413,350 @@ def test_machine_timezone_is_validated_before_saving():
         MachineInput(name="M1", ip="10.0.0.1", db_number=53, timezone="Marte/Olympus")
     machine = MachineInput(name="M1", ip="10.0.0.1", db_number=53, timezone="America/Sao_Paulo")
     assert machine.timezone == "America/Sao_Paulo"
+
+
+# --- o dia de um sinal, a partir do que ficou gravado --------------------------
+
+
+def _readings(start, count, step_seconds=5):
+    return [start + timedelta(seconds=step_seconds * index) for index in range(count)]
+
+
+def test_a_signal_day_splits_on_the_moment_the_bit_moved():
+    from app.signals import build_day
+
+    start = datetime(2026, 9, 29, 0, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=24)
+    now = start + timedelta(seconds=60)
+    # The first reading of the day is also the first event: what the panel saw is
+    # what it stored, at the same instant.
+    events = [(start, False), (start + timedelta(seconds=30), True)]
+
+    day = build_day("0.1", _readings(start, 13), events, start, end, now)
+
+    assert [(segment.seconds, segment.value) for segment in day.segments] == [
+        (30, False),
+        (30, True),
+    ]
+    assert (day.on_seconds, day.off_seconds, day.unknown_seconds) == (30, 30, 0)
+    # The reading 5 s ago still speaks for now, so nothing is left unknown.
+    assert day.elapsed_seconds == 60
+    assert day.percent(day.on_seconds) == 50
+
+
+def test_a_stretch_with_no_readings_is_not_a_stopped_machine():
+    from app.signals import build_day
+
+    start = datetime(2026, 9, 29, 0, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=24)
+    events = [(start, True)]
+    # Ten seconds of readings, ten minutes of nothing, then readings again.
+    samples = _readings(start, 3) + _readings(start + timedelta(minutes=10), 3)
+    now = start + timedelta(minutes=10, seconds=10)
+
+    day = build_day("0.0", samples, events, start, end, now)
+
+    assert [(segment.seconds, segment.value) for segment in day.segments] == [
+        (10, True),
+        (590, None),
+        (10, True),
+    ]
+    # The hole runs from the last reading to the first one after it: ten seconds of
+    # the 610 are attested on each side, the rest is not.
+    assert day.unknown_seconds == 590
+    # The hole counts in the denominator, so the percentages cannot hide it.
+    assert day.percent(day.unknown_seconds) == round(100 * 590 / 610)
+
+
+def test_the_state_at_midnight_comes_from_the_change_before_it():
+    from app.signals import build_day
+
+    start = datetime(2026, 9, 29, 0, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=24)
+    # The bit was already set at 23:50 the day before, and only fell at 10:00.
+    events = [(start - timedelta(minutes=10), True), (start + timedelta(hours=10), False)]
+    now = start + timedelta(hours=12)
+    # Read every ten minutes across the twelve hours that matter, with the
+    # tolerance opened to match, so the fall can be measured.
+    samples = [start + timedelta(minutes=10 * index) for index in range(0, 73)]
+
+    day = build_day(
+        "0.2", samples, events, start, end, now, tolerance=timedelta(minutes=15)
+    )
+
+    first = day.segments[0]
+    assert first.start == start
+    assert first.value is True
+    assert day.off_seconds == 7200
+
+
+def test_a_day_with_no_readings_at_all_is_unknown_from_end_to_end():
+    from app.signals import build_day
+
+    start = datetime(2026, 9, 29, 0, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=24)
+    day = build_day("0.3", [], [], start, end, start + timedelta(hours=6))
+
+    assert [(segment.seconds, segment.value) for segment in day.segments] == [(21600, None)]
+    assert (day.on_seconds, day.off_seconds) == (0, 0)
+    assert day.percent(day.unknown_seconds) == 100
+
+
+def test_a_past_day_is_measured_over_the_whole_day():
+    from app.signals import build_day
+
+    start = datetime(2026, 9, 28, 0, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=24)
+    events = [(start, True), (start + timedelta(hours=18), False)]
+    # A full day of readings every ten minutes, like a machine nobody closed.
+    samples = [start + timedelta(minutes=10 * index) for index in range(0, 145)]
+    now = start + timedelta(days=3)
+
+    day = build_day(
+        "0.1", samples, events, start, end, now, tolerance=timedelta(minutes=15)
+    )
+
+    assert day.elapsed_seconds == 86400
+    assert day.percent(day.on_seconds) == 75
+
+
+def test_the_percentages_do_not_divide_by_zero_on_a_day_that_has_not_started():
+    from app.signals import build_day
+
+    start = datetime(2026, 9, 30, 0, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=24)
+    day = build_day("0.0", [], [], start, end, start - timedelta(hours=1))
+
+    assert day.segments == []
+    assert day.elapsed_seconds == 0
+    assert day.percent(0) == 0
+
+
+# --- o que o painel grava enquanto ninguem esta olhando ------------------------
+
+
+def test_transitions_are_stored_only_when_the_bit_moves():
+    area_id = app_storage.add_area("Planta Gravacao", "Area Gravacao")
+    machine_id = app_storage.add_machine(area_id, "Transicoes", "fake", 53, "UTC")
+    moment = datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc)
+    try:
+        # The first look stores everything: nothing was known before it.
+        assert app_storage.save_transitions(machine_id, {"0.0": True, "0.1": False}, moment) == 2
+        # The same values again cost nothing, which is the point of the table.
+        assert (
+            app_storage.save_transitions(
+                machine_id, {"0.0": True, "0.1": False}, moment + timedelta(seconds=5)
+            )
+            == 0
+        )
+        assert (
+            app_storage.save_transitions(
+                machine_id, {"0.0": False, "0.1": False}, moment + timedelta(seconds=10)
+            )
+            == 1
+        )
+        events = app_storage.signal_events(
+            machine_id, ["0.0", "0.1"], moment, moment + timedelta(minutes=1)
+        )
+        assert [(when, bit) for when, bit in events["0.0"]] == [
+            (moment, True),
+            (moment + timedelta(seconds=10), False),
+        ]
+        assert [bit for _, bit in events["0.1"]] == [False]
+    finally:
+        app_storage.delete_machine(machine_id)
+
+
+def test_only_the_four_standard_signals_are_recorded():
+    from app.recorder import recorded_addresses
+
+    # COUNTER is a diagnostic pulse and the free signals belong to the customer, so
+    # neither belongs on a timeline of the day.
+    assert recorded_addresses() == ["0.0", "0.1", "0.2", "0.3"]
+
+
+def test_the_recorder_keeps_the_count_and_the_changes_without_a_browser():
+    from app.recorder import record_once
+
+    area_id = app_storage.add_area("Planta 24h", "Area 24h")
+    machine_id = app_storage.add_machine(area_id, "Gravador", "fake", 53, "UTC")
+    client = FakePLCClient()
+    try:
+        assert record_once(app_storage, lambda machine: client) == 1
+        # A reading and a transition for each of the four signals.
+        assert len(app_storage.hourly_counts(machine_id)) == 1
+        day = app_storage.signal_events(
+            machine_id, ["0.0", "0.1", "0.2", "0.3"], datetime(2020, 1, 1, tzinfo=timezone.utc),
+            datetime(2030, 1, 1, tzinfo=timezone.utc),
+        )
+        assert [len(day[address]) for address in ("0.0", "0.1", "0.2", "0.3")] == [1, 1, 1, 1]
+    finally:
+        app_storage.delete_machine(machine_id)
+
+
+def test_the_recorder_survives_a_machine_that_does_not_answer():
+    from app.recorder import record_once
+
+    area_id = app_storage.add_area("Planta Muda", "Area Muda")
+    machine_id = app_storage.add_machine(area_id, "Sem resposta", "10.255.255.1", 53, "UTC")
+
+    def refusing(_machine):
+        raise ConnectionError("sem resposta")
+
+    try:
+        assert record_once(app_storage, refusing) == 0
+        assert app_storage.hourly_counts(machine_id) == []
+    finally:
+        app_storage.delete_machine(machine_id)
+
+
+def test_the_history_is_pruned_to_the_retention_window():
+    area_id = app_storage.add_area("Planta Retencao", "Area Retencao")
+    machine_id = app_storage.add_machine(area_id, "Retencao", "fake", 53, "UTC")
+    now = datetime.now(timezone.utc)
+    old = now - timedelta(days=8)
+    fresh = now - timedelta(days=1)
+    try:
+        app_storage.save_sample(machine_id, 10, old)
+        app_storage.save_transitions(machine_id, {"0.0": True}, old)
+        app_storage.save_sample(machine_id, 40, fresh)
+        app_storage.save_transitions(machine_id, {"0.0": False}, fresh)
+
+        removed = app_storage.prune(now - timedelta(days=7))
+
+        # The old reading, its hourly row and the old transition.
+        assert removed == 3
+        assert [row["quantity"] for row in app_storage.hourly_counts(machine_id)] == [30]
+        assert len(app_storage.sample_times(machine_id, now - timedelta(days=2), now)) == 1
+    finally:
+        app_storage.delete_machine(machine_id)
+
+
+def test_the_signals_day_endpoint_reports_the_stretches():
+    area_id = app_storage.add_area("Planta Sinal", "Area Sinal")
+    machine_id = app_storage.add_machine(area_id, "Sinal", "fake", 53, "UTC")
+    start = datetime(2026, 9, 20, 0, 0, tzinfo=timezone.utc)
+    try:
+        # Read for a minute at midnight, then again at noon: the state in between is
+        # known, and the rest of the day is a hole nobody was looking at.
+        for index in range(0, 13):
+            moment = start + timedelta(seconds=5 * index)
+            app_storage.save_sample(machine_id, 100 + index, moment)
+            app_storage.save_transitions(machine_id, {"0.1": True}, moment)
+        noon = start + timedelta(hours=12)
+        for index in range(0, 13):
+            moment = noon + timedelta(seconds=5 * index)
+            app_storage.save_sample(machine_id, 200 + index, moment)
+            app_storage.save_transitions(machine_id, {"0.1": False}, moment)
+
+        body = TestClient(app).get(f"/api/machines/{machine_id}/signals-day?day=2026-09-20").json()
+
+        assert body["day"] == "2026-09-20"
+        assert body["elapsed_seconds"] == 86400
+        assert [signal["address"] for signal in body["signals"]] == ["0.0", "0.1", "0.2", "0.3"]
+        run = next(signal for signal in body["signals"] if signal["address"] == "0.1")
+        assert run["label"] == "Produção"
+        assert [(segment["value"], segment["start"][11:19]) for segment in run["segments"][:2]] == [
+            (True, "00:00:00"),
+            (None, "00:01:00"),
+        ]
+        assert run["on_seconds"] == 60
+        # The noon stretch adds the twenty seconds a reading still speaks for after
+        # it, which is what makes the live day reach up to the present.
+        assert run["off_seconds"] == 60 + 20
+        assert run["unknown_seconds"] == 86400 - 60 - 80
+        # The three parts are of the whole day and add up to it.
+        assert 99 <= run["on_percent"] + run["off_percent"] + run["unknown_percent"] <= 101
+        assert run["unknown_percent"] == 100
+        # A signal nothing was ever recorded for is unknown from end to end.
+        auto = next(signal for signal in body["signals"] if signal["address"] == "0.0")
+        assert auto["unknown_seconds"] == 86400
+    finally:
+        app_storage.delete_machine(machine_id)
+
+
+def test_the_signals_day_endpoint_validates_the_date_and_the_machine():
+    client = TestClient(app)
+    assert client.get("/api/machines/999999/signals-day").status_code == 404
+
+    area_id = app_storage.add_area("Planta Data", "Area Data")
+    machine_id = app_storage.add_machine(area_id, "Data", "fake", 53, "UTC")
+    try:
+        assert client.get(f"/api/machines/{machine_id}/signals-day?day=20-09-2026").status_code == 422
+    finally:
+        app_storage.delete_machine(machine_id)
+
+
+def test_the_trend_screen_is_its_own_window():
+    page = TestClient(app).get("/").text
+    assert 'id="trend-dialog"' in page
+    assert "TENDÊNCIA DOS SINAIS" in page
+    # The counts window has to survive beside it: the two are different subjects.
+    assert 'id="chart-dialog"' in page
+
+    script = TestClient(app).get("/static/app.js").text
+    assert "openTrend" in script
+    assert "'/api/machines/' + trendMachine.id + '/signals-day'" in script
+    # Its own button and its own attribute, so one window never opens the other.
+    assert "data-trend-id" in script
+    assert "querySelectorAll('.trend-open')" in script
+    assert "querySelectorAll('.chart-open')" in script
+    # The words come from the same table the card uses.
+    assert "BIT_WORDS[signal.kind]" in script
+
+    css = TestClient(app).get("/static/styles.css").text
+    assert ".chart-open,.trend-open{" in css
+    assert "#trend-dialog{width" in css
+    # The hole in the day needs a look of its own, not the same grey as the off bit.
+    assert ".trend-segment.off{background:#c6d4dd}" in css
+    assert ".trend-segment.unknown{" in css
+
+
+def test_the_trend_icon_is_vendored_with_the_others():
+    icons = TestClient(app).get("/static/icons.js").text
+    assert 'trending-up' in icons
+
+
+def test_the_trend_screen_is_its_own_window():
+    page = TestClient(app).get("/").text
+    assert 'id="trend-dialog"' in page
+    assert "TENDÊNCIA DOS SINAIS" in page
+    # The counts window has to survive beside it: the two are different subjects.
+    assert 'id="chart-dialog"' in page
+
+    script = TestClient(app).get("/static/app.js").text
+    assert "openTrend" in script
+    assert "'/api/machines/' + trendMachine.id + '/signals-day'" in script
+    # Its own button and its own attribute, so one window never opens the other.
+    assert "data-trend-id" in script
+    assert "querySelectorAll('.trend-open')" in script
+    assert "querySelectorAll('.chart-open')" in script
+    # The words come from the same table the card uses.
+    assert "BIT_WORDS[signal.kind]" in script
+
+    css = TestClient(app).get("/static/styles.css").text
+    assert ".chart-open,.trend-open{" in css
+    assert "#trend-dialog{width" in css
+    # The hole in the day needs a look of its own, not the same grey as the off bit.
+    assert ".trend-segment.off{background:#c6d4dd}" in css
+    assert ".trend-segment.unknown{" in css
+
+
+def test_the_trend_icon_is_vendored_with_the_others():
+    icons = TestClient(app).get("/static/icons.js").text
+    assert "trending-up" in icons
+
+
+def test_the_status_endpoint_does_not_write_history():
+    """The recorder owns the history, so opening the panel cannot change it."""
+    area_id = app_storage.add_area("Planta Leitura", "Area Leitura")
+    machine_id = app_storage.add_machine(area_id, "Somente leitura", "fake", 53, "UTC")
+    try:
+        assert TestClient(app).get(f"/api/machines/{machine_id}/status").status_code == 200
+        assert app_storage.hourly_counts(machine_id) == []
+        assert app_storage.sample_times(machine_id, datetime(2020, 1, 1, tzinfo=timezone.utc), datetime(2030, 1, 1, tzinfo=timezone.utc)) == []
+    finally:
+        app_storage.delete_machine(machine_id)
 
 
 def test_signal_labels_are_keyed_by_address():

@@ -58,6 +58,7 @@ ICONS = (
     "shield-check",
     "triangle-alert",
     "gauge",
+    "trending-up",
     "list",
     "clock",
     "circle-check",
