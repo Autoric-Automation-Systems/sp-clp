@@ -30,6 +30,7 @@ from .models import (
     LogoUpload,
     MachineInput,
     MachineStatus,
+    PasswordChange,
     PlantRenameInput,
     ScanInput,
     ScanResult,
@@ -89,6 +90,12 @@ def start_session(token: str) -> str:
 
 def end_session(token: str) -> None:
     sessions.pop(token, None)
+
+
+def end_other_sessions(keep: str) -> None:
+    """Drop every session but one, so a new password closes the other panels."""
+    for token in [token for token in sessions if token != keep]:
+        sessions.pop(token, None)
 
 
 def require_admin(authorization: str | None = Header(default=None)) -> None:
@@ -281,6 +288,25 @@ def logout(authorization: str | None = Header(default=None)) -> None:
     """
     if authorization and authorization.startswith("Bearer "):
         end_session(authorization[7:])
+
+
+@app.post("/api/auth/password", status_code=204, dependencies=[Depends(require_admin)])
+def change_password(
+    payload: PasswordChange, authorization: str | None = Header(default=None)
+) -> None:
+    """Replace the panel password, proving the current one first.
+
+    A wrong current password answers 403 and not 401 on purpose: the script reads 401
+    as a session that ended and would drop an authenticated caller out of the panel
+    over a typo. require_admin already ran, so the token here is valid.
+    """
+    encoded = storage.get_setting("password_hash")
+    if encoded is None or not verify_password(payload.current_password, encoded):
+        raise HTTPException(status_code=403, detail="Senha atual incorreta")
+    storage.set_setting("password_hash", hash_password(payload.new_password))
+    # Whoever changed the password keeps working; the panels still open do not.
+    if authorization:
+        end_other_sessions(authorization[7:])
 
 
 def _other_plant_names(plant_name: str) -> set[str]:

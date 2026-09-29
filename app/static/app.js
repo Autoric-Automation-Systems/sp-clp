@@ -1001,6 +1001,37 @@ document.querySelector('#login-button').onclick = async function () {
     message.textContent = 'Senha inválida.';
   }
 };
+document.querySelector('#password-form').onsubmit = async function (event) {
+  event.preventDefault();
+  const feedback = document.querySelector('#password-message');
+  const current = document.querySelector('#password-current').value;
+  const next = document.querySelector('#password-new').value;
+  const repetition = document.querySelector('#password-confirm').value;
+  // Nobody can recover the password from outside, so a typo here would lock the
+  // customer out of the panel. The repetition is the only guard.
+  if (next !== repetition) {
+    feedback.textContent = 'A repetição não confere com a nova senha.';
+    return;
+  }
+  if (next.length < 8) {
+    feedback.textContent = 'A nova senha precisa de pelo menos 8 caracteres.';
+    return;
+  }
+  const response = await request('/api/auth/password', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({current_password: current, new_password: next}),
+  });
+  if (response.ok) {
+    this.reset();
+    feedback.textContent = 'Senha alterada. As outras sessões foram encerradas.';
+    return;
+  }
+  // The wrong current password answers 403, so the session is still good and the
+  // panel stays open; the message from the server says what happened.
+  const detail = await response.json().catch(function () { return {}; });
+  feedback.textContent = detail.detail || 'Não foi possível trocar a senha.';
+};
 document.querySelector('#area-form').onsubmit = async function (event) {
   event.preventDefault();
   const payload = {

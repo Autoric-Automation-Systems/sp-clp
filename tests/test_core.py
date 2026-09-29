@@ -1834,3 +1834,115 @@ def test_the_script_ends_the_session_on_logout_and_after_five_idle_minutes():
     # Only starting a session and real user input may re-arm the timer. The 5 s
     # refresh is not activity, or a wall panel would never log out.
     assert len(re.findall(r"\barmIdleLogout\(\)", script)) == 3
+
+
+# --- troca de senha ----------------------------------------------------------
+
+
+def _change_password(client: TestClient, headers: dict[str, str], current: str, new: str):
+    return client.post(
+        "/api/auth/password",
+        headers=headers,
+        json={"current_password": current, "new_password": new},
+    )
+
+
+def test_changing_the_password_replaces_the_stored_hash(admin_password):
+    client = TestClient(app)
+    token = _login(client, admin_password)
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        response = _change_password(client, headers, admin_password, "senha-nova-123")
+        assert response.status_code == 204
+        assert verify_password("senha-nova-123", app_storage.get_setting("password_hash"))
+        # The old password stops opening sessions, the new one opens them.
+        assert client.post("/api/auth/login", json={"password": admin_password}).status_code == 401
+        end_session(_login(client, "senha-nova-123"))
+        # The panel that changed the password keeps working.
+        assert client.get(CONFIG_AREAS, headers=headers).status_code == 200
+    finally:
+        end_session(token)
+
+
+def test_a_wrong_current_password_is_refused_and_keeps_the_session(admin_password):
+    client = TestClient(app)
+    token = _login(client, admin_password)
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        response = _change_password(client, headers, "nao-e-a-minha", "senha-nova-123")
+        # 403 and not 401: the script reads 401 as a session that ended and would
+        # drop the caller out of the panel over a typo.
+        assert response.status_code == 403
+        assert client.get(CONFIG_AREAS, headers=headers).status_code == 200
+        # The stored password did not move.
+        assert verify_password(admin_password, app_storage.get_setting("password_hash"))
+    finally:
+        end_session(token)
+
+
+def test_changing_the_password_closes_the_other_sessions(admin_password):
+    client = TestClient(app)
+    first = _login(client, admin_password)
+    second = _login(client, admin_password)
+    second_headers = {"Authorization": f"Bearer {second}"}
+    try:
+        assert client.get(CONFIG_AREAS, headers=second_headers).status_code == 200
+        change = _change_password(client, {"Authorization": f"Bearer {first}"}, admin_password, "senha-nova-123")
+        assert change.status_code == 204
+        # The other panel is out; the one that made the change stays in.
+        assert client.get(CONFIG_AREAS, headers=second_headers).status_code == 401
+        assert client.get(CONFIG_AREAS, headers={"Authorization": f"Bearer {first}"}).status_code == 200
+    finally:
+        end_session(first)
+        end_session(second)
+
+
+def test_changing_the_password_needs_a_session(admin_password):
+    client = TestClient(app)
+    assert client.post(
+        "/api/auth/password",
+        json={"current_password": admin_password, "new_password": "senha-nova-123"},
+    ).status_code == 401
+    assert client.post(
+        "/api/auth/password",
+        headers={"Authorization": "Bearer nao-existe"},
+        json={"current_password": admin_password, "new_password": "senha-nova-123"},
+    ).status_code == 401
+    assert verify_password(admin_password, app_storage.get_setting("password_hash"))
+
+
+def test_a_short_new_password_is_rejected(admin_password):
+    client = TestClient(app)
+    token = _login(client, admin_password)
+    try:
+        response = _change_password(
+            client, {"Authorization": f"Bearer {token}"}, admin_password, "curta"
+        )
+        # Pydantic refuses it before the handler runs, so the hash never changes.
+        assert response.status_code == 422
+        assert verify_password(admin_password, app_storage.get_setting("password_hash"))
+    finally:
+        end_session(token)
+
+
+def test_the_settings_page_offers_the_password_fields_inside_the_locked_area():
+    page = TestClient(app).get("/").text
+    for field in ("password-form", "password-current", "password-new", "password-confirm"):
+        assert f'id="{field}"' in page, f"falta o campo {field}"
+    assert 'type="password"' in page
+    # The form belongs to the authenticated area, not to a public page.
+    assert page.index('id="settings-page"') < page.index('id="password-form"') < page.index('id="help-page"')
+
+    script = TestClient(app).get("/static/app.js").text
+    assert "'/api/auth/password'" in script
+    # The two fields have to match before anything is sent, because a typo here
+    # locks the customer out with no way back.
+    assert "password-confirm" in script
+    assert "next !== repetition" in script
+
+
+def test_the_help_page_explains_the_new_session_rules():
+    page = TestClient(app).get("/").text
+    assert "A sessão dura enquanto o servidor estiver rodando" not in page
+    assert "5 minutos" in page
+    assert "Trocar a senha" in page

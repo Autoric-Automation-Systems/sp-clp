@@ -49,6 +49,18 @@ Na primeira execução o Windows pode pedir permissão de firewall; permita em r
 
 Para testar sem CLP, cadastre uma máquina com IP `fake` depois de autenticar. O cliente simulado usa o mesmo contrato do DB: os 16 BOOLs em `0.0`–`1.7` com `Counter` em `DBX0.4`, a assinatura `SPCLP` em `DBX14.0` e `Count` como `DInt` big-endian em `DB20.0`. A varredura com `fake` responde `ready`.
 
+## Acesso e senha
+
+Monitorar não exige senha; **configurar exige**. A senha é criada na primeira execução, com pelo menos 8 caracteres, e fica guardada como hash PBKDF2-SHA256 em `data/sp-clp.sqlite3` — nunca como texto, e nunca aparece em log nem em mensagem de erro.
+
+- **A sessão termina sozinha após 5 minutos** sem uso, dos dois lados: o navegador desliga o painel e o servidor descarta o token. Alargar a janela depois não ressuscita um token vencido
+- Qualquer pedido autenticado empurra o prazo. O `polling` de 5 s do card **não** conta como uso, senão o painel nunca se desligaria
+- **Trocar a senha**: *Configurações → Acesso* pede a senha atual, a nova e a repetição. A repetição é conferida no navegador, porque um erro de digitação trancaria o cliente para fora sem volta
+- A troca **encerra as outras sessões** e mantém a de quem trocou
+- Senha atual errada responde **403**, não 401: 401 é sessão inválida, e o painel sairia da configuração por causa de um erro de digitação
+- Sem senha configurada, `GET /api/setup/status` responde `password_configured: false` e o painel oferece a criação; depois disso, `POST /api/setup/password` responde `409`
+- **Não há recuperação de senha**, porque o aplicativo é local e não envia nada. Anote a senha onde a equipe encontre; hoje a única saída é apagar `data/sp-clp.sqlite3`, que leva junto o cadastro e o histórico
+
 ## Infraestrutura de rede
 
 O computador que roda o SP-CLP precisa alcançar **cada CLP** cadastrado; os CLPs não são descobertos sozinhos.
