@@ -102,6 +102,9 @@ question for the customer, not a change to make on the spot.
   Portuguese with accents.
 - Comments are ASCII and only explain a decision that is not self-evident. A
   comment repeats the *why*, never the *what*.
+- The stylesheet carries one `[hidden]{display:none!important}` rule, because any
+  rule that sets `display` beats the attribute and leaves a hidden element on
+  screen. Nothing else needs a selector of its own.
 - Commit messages: imperative English subject that says what changed, then a body
   that explains why the decision was taken and what was rejected. One concern per
   commit.
@@ -163,7 +166,9 @@ never from a description of a screenshot.
 
 Colour and state are read as computed values, not as names: a paused tape bar is
 `rgb(255, 183, 3)` with `animation-play-state: paused`, a running one
-`rgb(35, 198, 230)` with `running`.
+`rgb(35, 198, 230)` with `running`. Hidden is read the same way, and the attribute
+is not proof: a field carrying `hidden` was painted anyway, and only the computed
+`display` said so.
 
 `scripts/build_windows.ps1` is the packaging smoke check and needs Windows. The
 `--collect-all tzdata` flag in it has never been confirmed in a real build.
