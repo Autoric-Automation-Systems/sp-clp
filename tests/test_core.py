@@ -1795,15 +1795,20 @@ def test_plant_names_must_own_a_usable_address():
     headers = {"Authorization": "Bearer test-token-plant-clash"}
     areas: list[int] = []
     try:
-        # "Rio Claro" and "rio-claro" reduce to the same address.
+        # "colisao base" and "colisao-base" reduce to the same address, so the
+        # second one *is* the same plant: the area joins it. A second plant
+        # fighting for the address is what must never be created.
         areas.append(app_storage.add_area("colisao base", "Area Um"))
         response = client.post(
             "/api/config/areas",
             headers=headers,
             json={"plant_name": "colisao-base", "name": "Area Dois"},
         )
-        assert response.status_code == 422
-        assert "colisao base" in response.json()["detail"]
+        assert response.status_code == 201
+        areas.append(response.json()["id"])
+        assert sorted(
+            row["name"] for row in app_storage.list_areas() if row["plant_name"] == "colisao base"
+        ) == ["Area Dois", "Area Um"]
 
         # A name that cannot become an address at all.
         response = client.post(
@@ -1835,6 +1840,82 @@ def test_plant_names_must_own_a_usable_address():
         for area_id in areas:
             app_storage.delete_area(area_id)
         end_session("test-token-plant-clash")
+
+
+def test_an_area_finds_the_plant_the_address_already_names():
+    """The plant is identified by its address, not by the spelling that was typed.
+
+    The customer adds the second area to a plant they can see in the list, and the
+    name arrives with whatever capitals, spaces or accents they typed. Refusing it
+    as "this address belongs to Linha 1" is a dead end: that address already names
+    the plant they meant.
+    """
+    from app.slugs import slugify
+
+    client = _admin_client("test-token-area-fold")
+    headers = {"Authorization": "Bearer test-token-area-fold"}
+    app_storage.add_area("Linha 1", "Envase")
+    try:
+        for typed in ("Linha 1", "linha 1", "LINHA 1", "Linha-1", "Linha 1 ", "Linha  1"):
+            response = client.post(
+                "/api/config/areas",
+                headers=headers,
+                json={"plant_name": typed, "name": f"Area {typed.strip()}"},
+            )
+            assert response.status_code == 201, (typed, response.json())
+        # The accents fold too, because the address is what identifies a plant.
+        app_storage.add_area("Produção", "Linha A")
+        response = client.post(
+            "/api/config/areas",
+            headers=headers,
+            json={"plant_name": "producao", "name": "Linha B"},
+        )
+        assert response.status_code == 201, response.json()
+
+        for name, address in (("Linha 1", "linha-1"), ("Produção", "producao")):
+            matching = [
+                candidate
+                for candidate in app_storage.plant_names()
+                if slugify(candidate).casefold() == address
+            ]
+            assert matching == [name], f"{address} answers for more than one plant"
+    finally:
+        for area in app_storage.list_areas():
+            if area["plant_name"] in {"Linha 1", "Produção"}:
+                app_storage.delete_area(area["id"])
+        end_session("test-token-area-fold")
+
+
+def test_the_area_form_offers_the_plants_that_exist():
+    """The plant is chosen from the list, because a plant exists once it has an area."""
+    page = TestClient(app).get("/").text
+    assert 'id="plant-choice" required' in page
+    assert 'id="plant-new-field"' in page
+    assert 'id="plant-new"' in page
+    # The free text field is gone: a plant that exists is chosen, not typed.
+    assert 'id="plant-name"' not in page
+
+    script = TestClient(app).get("/static/app.js").text
+    assert "Nova planta" in script
+    assert "const NEW_PLANT = '__new__';" in script
+    assert "#plant-choice" in script
+    assert "#plant-new-field" in script
+    assert "function syncNewPlantField" in script
+    # The typed name is only read when the option for a new plant is chosen.
+    assert "choice === NEW_PLANT" in script
+    # Editing an area keeps its plant, which is why the choice is disabled there.
+    assert "document.querySelector('#plant-choice').disabled" in script
+
+
+def test_the_hidden_attribute_actually_hides():
+    """A rule that sets display beats the browser's own [hidden] rule.
+
+    The field for a new plant was painted while the attribute was set, and so were
+    the cancel buttons and the probe result. One rule covers every element instead
+    of naming them one by one.
+    """
+    css = TestClient(app).get("/static/styles.css").text
+    assert "[hidden]{display:none!important}" in css
 
 
 def test_renaming_a_plant_to_the_same_address_is_still_allowed():
@@ -2313,7 +2394,7 @@ def test_there_is_a_floating_button_to_return_to_the_top():
     css = TestClient(app).get("/static/styles.css").text
     assert ".to-top{position:fixed" in css
     # display:grid beats the hidden attribute unless a rule says otherwise.
-    assert ".to-top[hidden]{display:none}" in css
+    assert "[hidden]{display:none!important}" in css
     script = TestClient(app).get("/static/app.js").text
     assert "'#to-top'" in script
     assert "updateToTop" in script

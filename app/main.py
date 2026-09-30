@@ -340,12 +340,31 @@ def _other_plant_names(plant_name: str) -> set[str]:
     return {name for name in storage.plant_names() if name != plant_name}
 
 
+def _plant_named(plant_name: str) -> str | None:
+    """The stored spelling of the plant that already answers on ``plant_name``.
+
+    A plant is identified by its address, so "linha 1" typed by hand is the plant
+    called "Linha 1", not a second one. Refusing it as a clash would be a dead end:
+    the customer is adding an area to a plant that is right there in the list.
+    """
+    slug = slugify(plant_name).casefold()
+    if not slug:
+        return None
+    for name in storage.plant_names():
+        if slugify(name).casefold() == slug:
+            return name
+    return None
+
+
 @app.post("/api/config/areas", status_code=201, dependencies=[Depends(require_admin)])
 def create_area(payload: AreaInput) -> dict[str, int]:
-    error = plant_name_error(payload.plant_name, _other_plant_names(payload.plant_name))
+    # The area joins the plant that already owns the address, spelled the way it
+    # was stored, so the form cannot create a second plant fighting for it.
+    plant_name = _plant_named(payload.plant_name) or payload.plant_name
+    error = plant_name_error(plant_name, _other_plant_names(plant_name))
     if error:
         raise HTTPException(status_code=422, detail=error)
-    return {"id": storage.add_area(payload.plant_name, payload.name)}
+    return {"id": storage.add_area(plant_name, payload.name)}
 
 
 @app.get("/api/config/areas", dependencies=[Depends(require_admin)])
@@ -369,7 +388,8 @@ def update_area(area_id: int, payload: AreaInput) -> dict[str, int]:
     area = storage.get_area(area_id)
     if area is None:
         raise HTTPException(status_code=404, detail=AREA_NOT_FOUND)
-    if payload.plant_name != area["plant_name"]:
+    # A name that reduces to this area's own plant is the same plant, not a move.
+    if (_plant_named(payload.plant_name) or payload.plant_name) != area["plant_name"]:
         raise HTTPException(
             status_code=422,
             detail="Para mudar o nome da planta use o painel Planta; isso renomeia todas as áreas dela",

@@ -37,6 +37,10 @@ let cachedAreas = [];
 let lastItems = [];
 const signalsOpen = new Set();
 
+// The area form picks its plant from the plants that exist. This sentinel is the
+// option that asks for a new one instead of naming an existing plant.
+const NEW_PLANT = '__new__';
+
 // Static <svg data-icon="..."> placeholders in index.html are filled from icons.js.
 // Templates rendered by this file call icon() directly.
 hydrateIcons();
@@ -1017,6 +1021,19 @@ async function loadSettings() {
     ? cachedAreas.map(function (area) { return `<option value="${area.id}">${esc(area.plant_name)} / ${esc(area.name)}</option>`; }).join('')
     : '<option value="">Crie uma área primeiro</option>';
 
+  // A plant exists because it has an area, so the plants are the names the areas
+  // carry, each one once. Typing the name from memory was a dead end: the same
+  // plant spelled with different capitals looked like a second plant.
+  const plantNames = [];
+  cachedAreas.forEach(function (area) {
+    if (!plantNames.includes(area.plant_name)) plantNames.push(area.plant_name);
+  });
+  plantNames.sort(function (left, right) { return left.localeCompare(right, 'pt-BR'); });
+  document.querySelector('#plant-choice').innerHTML = plantNames
+    .map(function (name) { return `<option value="${esc(name)}">${esc(name)}</option>`; })
+    .join('') + `<option value="${NEW_PLANT}">Nova planta…</option>`;
+  syncNewPlantField();
+
   const withSlug = cachedAreas.filter(function (area) { return area.plant_slug; });
   const seen = new Set();
   const plants = withSlug.filter(function (area) {
@@ -1054,12 +1071,20 @@ async function loadSettings() {
   });
 }
 
+// The name of a new plant is only asked for when that option is chosen.
+function syncNewPlantField() {
+  const creating = document.querySelector('#plant-choice').value === NEW_PLANT;
+  document.querySelector('#plant-new-field').hidden = !creating;
+  document.querySelector('#plant-new').required = creating;
+  if (!creating) document.querySelector('#plant-new').value = '';
+}
+
 function beginAreaEdit(areaId) {
   const area = cachedAreas.find(function (item) { return item.id === areaId; });
   if (!area) return;
   editingAreaId = areaId;
-  document.querySelector('#plant-name').value = area.plant_name;
-  document.querySelector('#plant-name').disabled = true;
+  document.querySelector('#plant-choice').value = area.plant_name;
+  document.querySelector('#plant-choice').disabled = true;
   document.querySelector('#area-name').value = area.name;
   document.querySelector('#area-form-eyebrow').textContent = 'EDITAR ÁREA';
   document.querySelector('#area-form-title').textContent = 'Atualizar área';
@@ -1071,7 +1096,8 @@ function beginAreaEdit(areaId) {
 function cancelAreaEdit() {
   editingAreaId = null;
   document.querySelector('#area-form').reset();
-  document.querySelector('#plant-name').disabled = false;
+  document.querySelector('#plant-choice').disabled = false;
+  syncNewPlantField();
   document.querySelector('#area-form-eyebrow').textContent = 'NOVA ÁREA';
   document.querySelector('#area-form-title').textContent = 'Adicionar área';
   document.querySelector('#area-submit-label').textContent = 'Salvar área';
@@ -1293,8 +1319,9 @@ document.querySelector('#password-form').onsubmit = async function (event) {
 };
 document.querySelector('#area-form').onsubmit = async function (event) {
   event.preventDefault();
+  const choice = document.querySelector('#plant-choice').value;
   const payload = {
-    plant_name: document.querySelector('#plant-name').value,
+    plant_name: choice === NEW_PLANT ? document.querySelector('#plant-new').value : choice,
     name: document.querySelector('#area-name').value,
   };
   const url = editingAreaId ? '/api/config/areas/' + editingAreaId : '/api/config/areas';
@@ -1315,6 +1342,7 @@ document.querySelector('#area-form').onsubmit = async function (event) {
   }
 };
 document.querySelector('#area-cancel').onclick = cancelAreaEdit;
+document.querySelector('#plant-choice').onchange = syncNewPlantField;
 document.querySelector('#plant-form').onsubmit = async function (event) {
   event.preventDefault();
   const slug = document.querySelector('#plant-select').value;
