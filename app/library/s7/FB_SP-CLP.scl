@@ -1,11 +1,6 @@
 ﻿FUNCTION_BLOCK "FB_SP-CLP"
-TITLE = FB_SP-CLP
 { S7_Optimized_Access := 'FALSE' }
-AUTHOR : 'Ruy Junior'
-FAMILY : SP_CLP
 VERSION : 0.1
-//Function for remote monitoring.
-//Autoric.com.br
    VAR_INPUT 
       Auto { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
       Run { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
@@ -35,6 +30,7 @@ VERSION : 0.1
 
    VAR 
       CountProd {InstructionName := 'IEC_UDCOUNTER'; LibVersion := '1.0'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : IEC_UDCOUNTER;
+      R_Trig {InstructionName := 'R_TRIG'; LibVersion := '1.0'} : R_TRIG;
    END_VAR
 
    VAR_TEMP 
@@ -44,14 +40,12 @@ VERSION : 0.1
 
 
 BEGIN
-	#CountProd.R := "FirstScan";
+	#R_Trig(CLK := #Counter);
 	
-	IF #Run THEN
-	    "#CountProd".CTU(CU := #Counter,
-	                     PV := #PV,
-	                     R := "FirstScan",
-	                     CV => #Count);
-	END_IF;
+	"#CountProd".CTU(CU := #R_Trig.Q & #Run,
+	             PV := #PV,
+	             R := "FirstScan",
+	             CV => #Count);
 	
 END_FUNCTION_BLOCK
 

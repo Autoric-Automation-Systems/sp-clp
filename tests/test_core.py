@@ -2451,6 +2451,14 @@ def test_the_build_ships_the_block_the_help_page_offers():
     # The panel reads absolute addresses, so the block must arrive with the
     # optimized access already off instead of relying on the operator.
     assert "S7_Optimized_Access := 'FALSE'" in source
+    # The count is an edge, not a level: one pulse of Counter is one piece, and
+    # nothing is counted while the machine is stopped. A level count would inflate
+    # production silently, and no Python test can see inside a compiled block.
+    assert "#R_Trig(CLK := #Counter)" in source
+    assert "CU := #R_Trig.Q & #Run" in source
+    # The counter restarts at zero on every PLC restart, which is the decrease the
+    # panel already treats as a new baseline instead of negative production.
+    assert 'R := "FirstScan"' in source
     assert TestClient(app).get("/api/library/s7/FB_SP-CLP.scl").status_code == 200
 
 

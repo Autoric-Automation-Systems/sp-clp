@@ -157,6 +157,7 @@ app/library/
 O arquivo de cada família é uma **fonte SCL**, importada no TIA Portal como *fonte externa* (*External source files*) e compilada em bloco. Serve do **TIA Portal 13 em diante**, então existe **uma versão só**: não há arquivo por versão do TIA para escolher, e o próprio nome do arquivo já é o nome do bloco.
 
 - A fonte declara o bloco com `S7_Optimized_Access := 'FALSE'`, ou seja, o **acesso otimizado já vem desligado** do arquivo. É exatamente o que o painel precisa: ele lê endereços absolutos, e num bloco otimizado essas posições não existem
+- O bloco soma na **borda de subida** de `Counter` (uma instância `R_TRIG`) e **só enquanto `RUN` está ligado**: máquina parada não soma. E o contador é zerado na primeira varredura (`FirstScan`), então o número começa do zero a cada arranque do CLP — a queda que o painel trata como nova linha de base, sem produção negativa
 - **Tudo o que estiver dentro de um diretório de família é oferecido**, com qualquer extensão: o carregador não filtra por sufixo, então uma exportação antiga em `.zal`/`.zal17` ou o arquivo de outra marca entram na lista do mesmo jeito
 - **Os arquivos são versionados no repositório**, junto com o código: o painel e o bloco precisam andar juntos, e um build sem a biblioteca gera um instalador que não entrega o bloco ao cliente. A fonte é texto, então pesa poucos KB
 - A pasta entra no executável pelo `--add-data` de `scripts/build_windows.ps1`, então **trocar a biblioteca exige gerar o `.exe` de novo**
