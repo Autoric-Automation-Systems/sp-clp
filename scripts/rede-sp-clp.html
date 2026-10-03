@@ -75,13 +75,11 @@
   /* Faixa do rodape, no mesmo espirito da do modo TV. */
   footer { margin-top: auto; display: flex; align-items: center; gap: 6mm; padding: 5mm 13mm; border-top: 1px solid #c8d9e2; background: #f2f8fb }
   .slogan { font: italic 700 5mm Georgia, "Times New Roman", serif; color: #0769b1 }
-  .addresses { color: #647c8d; font-size: 3mm; letter-spacing: .04em }
-  .addresses b { color: #102a43 }
-  /* A folha viaja por WhatsApp, entao o endereco e para tocar, nao para ler. */
-  .addresses a { color: #0769b1; text-decoration: none }
-  .addresses a:hover { text-decoration: underline }
-  .repo { margin-top: 1.4mm; display: flex; align-items: center; gap: 1.6mm }
-  .repo .icon { width: 3.6mm; height: 3.6mm; color: #647c8d }
+  /* A folha viaja por WhatsApp e o endereco e um alvo para tocar, entao viram tres
+     icones com moldura, no mesmo desenho dos links do painel. */
+  .links { display: flex; gap: 3mm; margin-top: 2.6mm }
+  .links a { display: grid; place-items: center; width: 8.5mm; height: 8.5mm; border: 1px solid #c8d9e2; border-radius: 2mm; background: #fff; color: #0769b1 }
+  .links a .icon { width: 4.4mm; height: 4.4mm }
   .stamp { margin-left: auto; text-align: right; color: #647c8d; font-size: 3mm; line-height: 1.5 }
   .stamp b { display: block; color: #102a43; font-size: 3.4mm }
 </style>
@@ -174,8 +172,11 @@ Qualquer aparelho da planta abre o painel no navegador. Nada sai da fábrica e n
 <footer>
   <div>
     <p class="slogan">Você imagina, nós fazemos funcionar</p>
-    <p class="addresses"><a href="https://www.autoric.com.br"><b>www.autoric.com.br</b></a> · <a href="https://www.instagram.com/autoricbr/">instagram/@autoricbr</a></p>
-    <p class="addresses repo"><svg class="icon" data-icon="github" viewBox="0 0 24 24"></svg><a href="https://github.com/Autoric-Automation-Systems/sp-clp">github.com/Autoric-Automation-Systems/sp-clp</a></p>
+    <p class="links">
+      <a href="https://www.autoric.com.br" title="Site da Autoric"><svg class="icon" data-icon="link" viewBox="0 0 24 24"></svg></a>
+      <a href="https://www.instagram.com/autoricbr/" title="Instagram @autoricbr"><svg class="icon" data-icon="instagram" viewBox="0 0 24 24"></svg></a>
+      <a href="https://github.com/Autoric-Automation-Systems/sp-clp" title="GitHub: Autoric-Automation-Systems/sp-clp"><svg class="icon" data-icon="github" viewBox="0 0 24 24"></svg></a>
+    </p>
   </div>
   <div class="stamp">
     <b>SP-CLP</b>
