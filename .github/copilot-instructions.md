@@ -43,6 +43,7 @@ points it elsewhere. Python 3.11+, dependencies `fastapi`, `uvicorn[standard]`,
 | Dashboard, help page, TV panel | `app/static/` | Modo TV |
 | Lucide icons, generated offline | `scripts/build_icons.py` -> `app/static/icons.js` | Estrutura |
 | Windows executable | `scripts/build_windows.ps1` | Gerar o executavel Windows |
+| Network flyer for the customer | `scripts/rede-sp-clp.html` -> `SP-CLP-rede.pdf` | Estrutura |
 
 ## The PLC contract, as implemented
 
