@@ -77,6 +77,11 @@
   .slogan { font: italic 700 5mm Georgia, "Times New Roman", serif; color: #0769b1 }
   .addresses { color: #647c8d; font-size: 3mm; letter-spacing: .04em }
   .addresses b { color: #102a43 }
+  /* A folha viaja por WhatsApp, entao o endereco e para tocar, nao para ler. */
+  .addresses a { color: #0769b1; text-decoration: none }
+  .addresses a:hover { text-decoration: underline }
+  .repo { margin-top: 1.4mm; display: flex; align-items: center; gap: 1.6mm }
+  .repo .icon { width: 3.6mm; height: 3.6mm; color: #647c8d }
   .stamp { margin-left: auto; text-align: right; color: #647c8d; font-size: 3mm; line-height: 1.5 }
   .stamp b { display: block; color: #102a43; font-size: 3.4mm }
 </style>
@@ -169,7 +174,8 @@ Qualquer aparelho da planta abre o painel no navegador. Nada sai da fábrica e n
 <footer>
   <div>
     <p class="slogan">Você imagina, nós fazemos funcionar</p>
-    <p class="addresses"><b>www.autoric.com.br</b> · instagram/@autoricbr</p>
+    <p class="addresses"><a href="https://www.autoric.com.br"><b>www.autoric.com.br</b></a> · <a href="https://www.instagram.com/autoricbr/">instagram/@autoricbr</a></p>
+    <p class="addresses repo"><svg class="icon" data-icon="github" viewBox="0 0 24 24"></svg><a href="https://github.com/Autoric-Automation-Systems/sp-clp">github.com/Autoric-Automation-Systems/sp-clp</a></p>
   </div>
   <div class="stamp">
     <b>SP-CLP</b>
