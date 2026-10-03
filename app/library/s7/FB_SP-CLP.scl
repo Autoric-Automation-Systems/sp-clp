@@ -1,6 +1,11 @@
 ﻿FUNCTION_BLOCK "FB_SP-CLP"
+TITLE = FB_SP-CLP
 { S7_Optimized_Access := 'FALSE' }
+AUTHOR : 'Ruy Junior'
+FAMILY : SP_CLP
 VERSION : 0.1
+//Function for remote monitoring.
+//Autoric.com.br
    VAR_INPUT 
       Auto { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
       Run { ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;

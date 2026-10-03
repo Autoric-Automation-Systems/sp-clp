@@ -2459,6 +2459,10 @@ def test_the_build_ships_the_block_the_help_page_offers():
     # The counter restarts at zero on every PLC restart, which is the decrease the
     # panel already treats as a new baseline instead of negative production.
     assert 'R := "FirstScan"' in source
+    # A re-export from TIA drops the header silently, and the block arrives in the
+    # customer's project without an author to call.
+    assert "AUTHOR : 'Ruy Junior'" in source
+    assert "FAMILY : SP_CLP" in source
     assert TestClient(app).get("/api/library/s7/FB_SP-CLP.scl").status_code == 200
 
 
