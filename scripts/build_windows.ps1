@@ -25,3 +25,20 @@ if (-not (Test-Path $venvPython)) {
     sp_clp_launcher.py
 
 Write-Host "Executavel criado em dist\SP-CLP.exe"
+
+# O instalador e opcional: sem o Inno Setup o executavel portatil ja serve.
+$version = (Select-String -Path "pyproject.toml" -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+$iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+if ($null -eq $iscc) {
+    Write-Host "Inno Setup 6 nao encontrado no PATH: o instalador nao foi gerado."
+    Write-Host "Instale o Inno Setup 6, ou distribua dist\SP-CLP.exe como portatil."
+    exit 0
+}
+
+Write-Host "Gerando o instalador com $($iscc.Source)..."
+& $iscc.Source "scripts\sp-clp.iss" "/DAppVersion=$version"
+if ($LASTEXITCODE -ne 0) {
+    throw "O Inno Setup falhou com o codigo $LASTEXITCODE."
+}
+
+Write-Host "Instalador criado em dist\SP-CLP-$version-instalador.exe"

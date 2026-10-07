@@ -43,6 +43,7 @@ points it elsewhere. Python 3.11+, dependencies `fastapi`, `uvicorn[standard]`,
 | Dashboard, help page, TV panel | `app/static/` | Modo TV |
 | Lucide icons, generated offline | `scripts/build_icons.py` -> `app/static/icons.js` | Estrutura |
 | Windows executable | `scripts/build_windows.ps1` | Gerar o executavel Windows |
+| Windows installer | `scripts/sp-clp.iss` | Gerar o executavel Windows |
 | Network flyer for the customer | `scripts/rede-sp-clp.html` -> `SP-CLP-rede.pdf` | Estrutura |
 
 ## The PLC contract, as implemented
@@ -186,26 +187,27 @@ is not proof: a field carrying `hidden` was painted anyway, and only the compute
   pinned Lucide version and writes `app/static/icons.js`. The generator list is the
   single source of icons; a name asked for twice is a bug, and a test refuses it.
 
-## Blocked, waiting on the customer
+## The installer: decided, never run
 
-The installer is the open item, and it needs two answers before it can be written:
-**Inno Setup or MSI**, and **auto-start with Windows yes or no**. Whatever the
-answer, it has to register the `sp-clp` alias in the Windows `hosts` file and open
-the firewall for the chosen port. A real build still has to confirm the bundled
-`tzdata` and the packaged `app/library` folder.
+Inno Setup, not MSI, because the delivery is one PC in a plant handed over on site:
+the two steps MSI cannot express declaratively - the `sp-clp` alias in `hosts` and
+the firewall rule - are a few lines there. `scripts/sp-clp.iss` does them and
+`scripts/build_windows.ps1` compiles it when `ISCC.exe` is on PATH. MSI is still the
+answer if the customer's IT deploys by GPO or Intune; the application does not
+change either way.
 
-The two formats differ in what the custom steps cost. MSI is a declarative database
-that Windows Installer can roll back and that corporate IT deploys by policy, but
-editing `hosts` has no declarative equivalent and the firewall rule is an extension
-or a custom action. Inno Setup is a script that drives an installer UI, where both
-steps are a few lines; it has neither policy deployment nor repair. One PC in a
-plant, handed over on site, points at Inno Setup; a customer whose IT deploys by
-GPO points at MSI. The application itself does not change either way.
+The choices it carries: install to `C:\SP-CLP`, outside Program Files, because the
+panel writes `data/` beside the executable; a port page defaulting to 8000, and the
+chosen port becomes a machine environment variable and a firewall rule; an optional
+scheduled task that starts the panel at boot as SYSTEM with `--no-browser`, because
+there is no desktop to open a browser on; and uninstalling keeps `data/`, so a
+reinstall finds the customer's registry, password and history.
 
-**Before the installer, one bug has to go.** `DEFAULT_PATH` in `app/storage.py` is
-the relative `data/sp-clp.sqlite3`, so the folder follows the working directory and
-not the executable. Double-clicking creates it beside the `.exe`, which is what the
-README promises, but a shortcut without "Start in", a scheduled task or a service
-starts in `C:\Windows\System32` and would write the customer's database there, or
-fail for lack of permission. Anchor it to the executable, or to `%PROGRAMDATA%`,
-and leave `SP_CLP_DB` as the override.
+**No Windows run has happened.** The first install has to confirm the facts nobody
+can check from here: `--collect-all tzdata`, the packaged `app/library` folder, the
+`hosts` line, the firewall rule and the scheduled task.
+
+The data folder no longer depends on the working directory: `app/storage.py` anchors
+it to the executable, so a shortcut, a scheduled task or a service writes `data/`
+beside the `.exe` instead of into `C:\Windows\System32`. `SP_CLP_DB` still overrides
+it, and a relative override is read from that same folder.
