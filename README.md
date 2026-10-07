@@ -205,10 +205,11 @@ RUN      ██████████░░░░░░██████░�
 `/tvpanel` é a tela para deixar num monitor na parede: **uma máquina por vez ocupando a tela inteira**, trocando sozinha a cada **5 segundos**. É a mesma leitura do painel normal, com outra roupa.
 
 - Cada sinal aparece como um círculo grande **com o nome e o estado escritos embaixo**. No card normal isso vive no `title`, que só aparece passando o mouse — e na parede ninguém passa o mouse
-- O cabeçalho sai de cena e o rodapé vira faixa de marca, com o logotipo da Autoric em destaque. É a única página que não mostra o menu
-- Os controles ficam discretos no canto (30% de opacidade, cheios quando o mouse chega): **Pausar** e **Sair do modo TV**. A saída volta para `/` dentro da aplicação, sem recarregar
-- Uma barra fina no topo mostra o tempo até o próximo slide, e para junto com a pausa
-- Com uma máquina só a rotação não existe e o botão de pausa fica desabilitado; sem nenhuma, o painel explica onde cadastrar
+- O cabeçalho sai de cena e o rodapé vira faixa de marca: o logotipo da Autoric **sem link**, o slogan e os endereços escritos. Numa parede ninguém clica, então os links do rodapé normal saem de cena
+- O **Modo TV** tem entrada no menu, com ícone próprio, e o botão acende enquanto a rota está aberta
+- Os controles ficam discretos no canto (30% de opacidade, cheios quando o mouse chega) e são os de um videocassete, na ordem da fita: **voltar, pausar, tocar e avançar**, mais **Sair do modo TV**. O botão aceso diz o estado: pausa acesa, parado; play aceso, rodando
+- Uma barra fina no topo mostra o tempo até o próximo slide; na pausa ela **para e fica âmbar**. Voltar ou avançar à mão entrega o slide inteiro de novo, e chegar ao endereço da TV sempre volta a tocar
+- Com uma máquina só a rotação não existe e os quatro botões ficam desabilitados; sem nenhuma, o painel explica onde cadastrar
 - **Não pede senha**: é leitura, como o resto do painel, e continua funcionando com a sessão de configuração encerrada
 - O endereço é **reservado**: nenhuma planta responde nele, nem uma que se chame `tvpanel`
 
@@ -246,6 +247,7 @@ O dashboard mostra um único card com todas as plantas e o status de cada máqui
 - `/RioVerde`, `/Anapolis`, `/Plant-1` — página da planta, com os cards completos de cada máquina
 - `/Configuracoes` e `/Ajuda` — menu
 - Endereços são comparados sem diferenciar maiúsculas, e nomes reservados (`Ajuda`, `Configuracoes`, `Dashboard`) não viram endereço de planta
+- **O endereço é o que identifica uma planta.** Ao adicionar uma área, a planta é escolhida na lista das que já existem, e uma grafia diferente — maiúscula, acento, espaço a mais ou hífen — cai na mesma planta, porque o endereço é o mesmo. Duas plantas nunca dividem um endereço
 
 A página `Ajuda` traz a documentação de uso: acesso, cadastro, rótulos de sinais, leitura do painel e solução de problemas.
 
@@ -253,13 +255,16 @@ A página `Ajuda` traz a documentação de uso: acesso, cadastro, rótulos de si
 
 - `app/main.py`: API FastAPI e rotas do dashboard
 - `app/plc.py`: protocolo, parser, simulador e adaptador Snap7
-- `app/storage.py`: SQLite, amostras, eventos dos sinais e totais horários
+- `app/storage.py`: SQLite, amostras, eventos dos sinais e totais horários, e onde a pasta de dados é resolvida
+- `app/models.py`: modelos de entrada e saída da API (Pydantic)
+- `app/timezones.py`: fuso da máquina, hora local e limites do dia
 - `app/recorder.py`: a thread que lê os CLPs de 5 em 5 segundos e limpa o histórico velho
 - `app/signals.py`: o dia de um sinal a partir dos eventos gravados
 - `app/branding.py`: nome da empresa e logotipo do cabeçalho
+- `app/libraries.py`: arquivos da biblioteca do CLP, por família
 - `app/access.py`: endereços de acesso e configuração do bind
 - `app/slugs.py`: nome da planta convertido em endereço
-- `app/recovery.py`: comando `--reset-password`, a recuperação pela máquina do painel
+- `app/recovery.py`: os comandos de linha de comando, `--reset-password` e `--no-browser`
 - `app/security.py`: hash de senha PBKDF2
 - `app/static/`: dashboard HTML/CSS/JavaScript
 - `app/static/icons.js`: ícones do [Lucide](https://lucide.dev) gerados por `scripts/build_icons.py` e servidos localmente, sem CDN
@@ -268,7 +273,9 @@ A página `Ajuda` traz a documentação de uso: acesso, cadastro, rótulos de si
 
 A comunicação real com um CLP ainda exige teste no equipamento do cliente.
 
-O banco fica em `data/sp-clp.sqlite3`. Defina `SP_CLP_DB` para apontar para outro arquivo; a suíte de testes usa essa variável para nunca escrever no banco de desenvolvimento.
+O banco fica em `data/sp-clp.sqlite3`, **ao lado do executável**, e o logotipo do cliente na mesma pasta. A pasta é resolvida a partir do executável e **não** do diretório de onde o painel foi iniciado: um atalho sem "Iniciar em", uma tarefa agendada ou um serviço começam em `C:\Windows\System32`, e um caminho relativo gravaria os dados do cliente ali — ou falharia por falta de permissão.
+
+Defina `SP_CLP_DB` para apontar para outro arquivo. Um caminho relativo nessa variável é lido da pasta do aplicativo, e um caminho absoluto é usado como está; a suíte de testes usa essa variável para nunca escrever no banco de desenvolvimento.
 
 Para regenerar os ícones é preciso internet (o script baixa uma versão fixa do Lucide):
 
@@ -286,4 +293,21 @@ Execute no Windows PowerShell, na raiz do projeto:
 
 O script usa o comando `python` disponível no PATH e cria `.venv` automaticamente. O resultado será `dist\SP-CLP.exe`. Copie esse arquivo para uma pasta de instalação e execute-o; o servidor local será iniciado e o navegador abrirá automaticamente. A pasta `data` será criada ao lado do executável para armazenar configurações e histórico.
 
-O primeiro build gera um executável portátil. Um instalador com atalho, desinstalação e inicialização automática será adicionado depois do teste no Windows e da validação com o CLP real.
+O primeiro build gera um executável portátil, e o mesmo script gera o instalador quando o [Inno Setup 6](https://jrsoftware.org/isinfo.php) estiver instalado.
+
+### Instalador
+
+Com o `ISCC.exe` no PATH, o script acima compila `scripts\sp-clp.iss` e deixa `dist\SP-CLP-<versão>-instalador.exe`. Sem o Inno Setup ele avisa e para no executável portátil, que continua funcionando.
+
+Além de copiar o executável para `C:\SP-CLP`, o instalador:
+
+- **Pergunta a porta** (padrão `8000`) e **libera essa porta no firewall**, guardando a escolha como variável de ambiente da máquina. Com a porta `80` o endereço fica sem sufixo, só `http://sp-clp`
+- **Registra `127.0.0.1 sp-clp` no arquivo `hosts`** quando o apelido ainda não está lá
+- Cria os atalhos do menu Iniciar e, se marcado, da área de trabalho. Ao terminar, mostra os endereços para passar à equipe
+- Opcionalmente cria uma **tarefa agendada** que sobe o painel junto com o Windows, **sem precisar de ninguém logado**, passando `--no-browser`: no arranque não há tela para abrir o navegador
+- **Fecha um painel aberto antes de substituir o executável**, senão o arquivo está em uso
+- Na desinstalação, tira a regra de firewall, a tarefa agendada e a linha do `hosts`, e **preserva a pasta `data`**: cadastro, senha, histórico e logotipo continuam ali e uma instalação nova os reutiliza
+
+A instalação fica fora de `Arquivos de Programas` de propósito: o painel grava `data\` ao lado do próprio executável, e ali um usuário comum não teria permissão de escrita.
+
+**Nenhuma instalação real foi executada ainda.** O script está escrito e revisado linha a linha, mas a primeira instalação no Windows precisa confirmar o `tzdata`, a pasta `app/library` empacotada, o registro no `hosts`, a regra de firewall e a tarefa agendada.
