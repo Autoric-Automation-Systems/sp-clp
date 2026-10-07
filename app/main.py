@@ -707,7 +707,10 @@ def run() -> None:
         raise SystemExit(0 if apply_reset(storage) else 1)
 
     port = bind_port()
-    # The operator at this machine gets localhost; the named address is what makes
-    # a friendly browser favourite work, and what the plant network uses.
-    threading.Timer(1.5, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
+    # The operator sitting at this machine gets the panel on screen; the named
+    # address is what makes a friendly browser favourite work, and what the plant
+    # network uses. A panel started by Windows has nobody to show it to, which is
+    # what the flag is for.
+    if not options.no_browser:
+        threading.Timer(1.5, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
     uvicorn.run(app, host=bind_host(), port=port)

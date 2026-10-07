@@ -2,10 +2,40 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_PATH = "data/sp-clp.sqlite3"
+# Where the database sits inside the application folder.
+DEFAULT_NAME = Path("data") / "sp-clp.sqlite3"
+
+
+def application_folder() -> Path:
+    """The folder the panel runs from.
+
+    Frozen by PyInstaller that is the folder holding ``SP-CLP.exe``; from a
+    checkout it is the project root. It is deliberately not the working
+    directory: a shortcut without "Start in", a scheduled task or a service
+    starts the panel in ``C:\\Windows\\System32``, and the customer's database
+    would be created there, or fail for lack of permission.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[1]
+
+
+def resolve_path(path: str | Path | None = None) -> Path:
+    """Where the database lives: the argument, then ``SP_CLP_DB``, then the default.
+
+    A relative path from either source is read from the application folder rather
+    than from the working directory, so a panel pointed at another file finds the
+    same file whatever started the process.
+    """
+    chosen = path if path is not None else os.environ.get("SP_CLP_DB")
+    if chosen is None or str(chosen) == "":
+        return application_folder() / DEFAULT_NAME
+    resolved = Path(chosen).expanduser()
+    return resolved if resolved.is_absolute() else application_folder() / resolved
 
 
 class Storage:
@@ -13,8 +43,7 @@ class Storage:
         # An explicit path wins, then SP_CLP_DB, then the installed default. The
         # variable lets an operator point the app at another file and keeps the
         # test suite away from the development database.
-        resolved = path or os.environ.get("SP_CLP_DB") or DEFAULT_PATH
-        self.path = Path(resolved)
+        self.path = resolve_path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.initialize()
 

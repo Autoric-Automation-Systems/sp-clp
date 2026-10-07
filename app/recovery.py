@@ -24,6 +24,7 @@ from .security import hash_password
 from .storage import Storage
 
 FLAG = "--reset-password"
+NO_BROWSER_FLAG = "--no-browser"
 MIN_LENGTH = 8
 
 
@@ -41,6 +42,12 @@ def parse_options(argv: list[str]) -> argparse.Namespace:
         dest="reset_password",
         action="store_true",
         help="pede a nova senha no console e encerra sem subir o painel",
+    )
+    parser.add_argument(
+        NO_BROWSER_FLAG,
+        dest="no_browser",
+        action="store_true",
+        help="sobe o painel sem abrir o navegador, para o início automatico do Windows",
     )
     options, _ = parser.parse_known_args(argv)
     return options

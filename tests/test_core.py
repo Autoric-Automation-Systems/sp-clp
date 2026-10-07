@@ -612,6 +612,41 @@ def test_the_recorder_survives_a_machine_that_does_not_answer():
         app_storage.delete_machine(machine_id)
 
 
+def test_the_data_folder_follows_the_executable_not_the_working_directory(tmp_path, monkeypatch):
+    """A shortcut, a task or a service starts the panel somewhere else.
+
+    The default was the relative "data/sp-clp.sqlite3", so the folder followed the
+    working directory. Double-clicking put it beside the .exe, which is what the
+    README promises, but a scheduled task starts in C:\\Windows\\System32 and the
+    customer's database would have been written there, or failed there.
+    """
+    from app import storage as storage_module
+
+    monkeypatch.delenv("SP_CLP_DB", raising=False)
+    default = storage_module.application_folder() / "data" / "sp-clp.sqlite3"
+    assert storage_module.resolve_path() == default
+    assert default.is_absolute()
+
+    # Started from anywhere else, the answer does not move.
+    monkeypatch.chdir(tmp_path)
+    assert storage_module.resolve_path() == default
+
+    # A relative override is read from the application folder too, not from here.
+    assert storage_module.resolve_path("outro.sqlite3") == (
+        storage_module.application_folder() / "outro.sqlite3"
+    )
+
+    # Frozen, the application folder is the folder holding the .exe.
+    monkeypatch.setattr(storage_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(storage_module.sys, "executable", str(tmp_path / "SP-CLP.exe"))
+    assert storage_module.application_folder() == tmp_path
+    assert storage_module.resolve_path() == tmp_path / "data" / "sp-clp.sqlite3"
+
+    # An absolute path is kept as given, and the variable still wins over the default.
+    monkeypatch.setenv("SP_CLP_DB", str(tmp_path / "base.sqlite3"))
+    assert storage_module.resolve_path() == tmp_path / "base.sqlite3"
+
+
 def test_the_history_is_pruned_to_the_retention_window(tmp_path):
     """Prune sweeps every machine, so this one runs on a database of its own.
 
@@ -1596,6 +1631,21 @@ def test_bind_port_ignores_a_broken_value():
             os.environ.pop("SP_CLP_PORT", None)
         else:
             os.environ["SP_CLP_PORT"] = previous
+
+
+def test_the_panel_can_start_without_opening_a_browser():
+    """Windows can start the panel before anybody is logged on.
+
+    There is no desktop to receive a browser window then, so the startup task
+    passes the flag, while the shortcut the operator clicks leaves it off.
+    """
+    from app.recovery import parse_options
+
+    assert parse_options([]).no_browser is False
+    assert parse_options(["--no-browser"]).no_browser is True
+    # An unexpected argument still must not be the reason the panel refuses to start.
+    assert parse_options(["--qualquer-coisa"]).no_browser is False
+    assert parse_options(["--no-browser", "--reset-password"]).reset_password is True
 
 
 def test_access_endpoint_reports_the_alias():
