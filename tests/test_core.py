@@ -612,26 +612,33 @@ def test_the_recorder_survives_a_machine_that_does_not_answer():
         app_storage.delete_machine(machine_id)
 
 
-def test_the_history_is_pruned_to_the_retention_window():
-    area_id = app_storage.add_area("Planta Retencao", "Area Retencao")
-    machine_id = app_storage.add_machine(area_id, "Retencao", "fake", 53, "UTC")
+def test_the_history_is_pruned_to_the_retention_window(tmp_path):
+    """Prune sweeps every machine, so this one runs on a database of its own.
+
+    On the shared file it also deleted what the tests before it had written, and
+    the count only matched until the calendar passed the fixed dates those tests
+    use: the assertion held on the day it was written and broke four days later.
+    """
+    store = Storage(tmp_path / "retention.sqlite3")
+    area_id = store.add_area("Planta Retencao", "Area Retencao")
+    machine_id = store.add_machine(area_id, "Retencao", "fake", 53, "UTC")
     now = datetime.now(timezone.utc)
     old = now - timedelta(days=8)
     fresh = now - timedelta(days=1)
     try:
-        app_storage.save_sample(machine_id, 10, old)
-        app_storage.save_transitions(machine_id, {"0.0": True}, old)
-        app_storage.save_sample(machine_id, 40, fresh)
-        app_storage.save_transitions(machine_id, {"0.0": False}, fresh)
+        store.save_sample(machine_id, 10, old)
+        store.save_transitions(machine_id, {"0.0": True}, old)
+        store.save_sample(machine_id, 40, fresh)
+        store.save_transitions(machine_id, {"0.0": False}, fresh)
 
-        removed = app_storage.prune(now - timedelta(days=7))
+        removed = store.prune(now - timedelta(days=7))
 
         # The old reading, its hourly row and the old transition.
         assert removed == 3
-        assert [row["quantity"] for row in app_storage.hourly_counts(machine_id)] == [30]
-        assert len(app_storage.sample_times(machine_id, now - timedelta(days=2), now)) == 1
+        assert [row["quantity"] for row in store.hourly_counts(machine_id)] == [30]
+        assert len(store.sample_times(machine_id, now - timedelta(days=2), now)) == 1
     finally:
-        app_storage.delete_machine(machine_id)
+        store.delete_machine(machine_id)
 
 
 def test_the_signals_day_endpoint_reports_the_stretches():
