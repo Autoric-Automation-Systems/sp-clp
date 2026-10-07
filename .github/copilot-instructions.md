@@ -193,3 +193,19 @@ The installer is the open item, and it needs two answers before it can be writte
 answer, it has to register the `sp-clp` alias in the Windows `hosts` file and open
 the firewall for the chosen port. A real build still has to confirm the bundled
 `tzdata` and the packaged `app/library` folder.
+
+The two formats differ in what the custom steps cost. MSI is a declarative database
+that Windows Installer can roll back and that corporate IT deploys by policy, but
+editing `hosts` has no declarative equivalent and the firewall rule is an extension
+or a custom action. Inno Setup is a script that drives an installer UI, where both
+steps are a few lines; it has neither policy deployment nor repair. One PC in a
+plant, handed over on site, points at Inno Setup; a customer whose IT deploys by
+GPO points at MSI. The application itself does not change either way.
+
+**Before the installer, one bug has to go.** `DEFAULT_PATH` in `app/storage.py` is
+the relative `data/sp-clp.sqlite3`, so the folder follows the working directory and
+not the executable. Double-clicking creates it beside the `.exe`, which is what the
+README promises, but a shortcut without "Start in", a scheduled task or a service
+starts in `C:\Windows\System32` and would write the customer's database there, or
+fail for lack of permission. Anchor it to the executable, or to `%PROGRAMDATA%`,
+and leave `SP_CLP_DB` as the override.
