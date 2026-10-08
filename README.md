@@ -269,7 +269,7 @@ A página `Ajuda` traz a documentação de uso: acesso, cadastro, rótulos de si
 - `app/static/`: dashboard HTML/CSS/JavaScript
 - `app/static/icons.js`: ícones do [Lucide](https://lucide.dev) gerados por `scripts/build_icons.py` e servidos localmente, sem CDN
 - `tests/`: testes sem equipamento físico
-- `SP-CLP-rede.pdf`: uma folha A4 deitada explicando a rede do painel ao cliente, com as duas marcas. Sai de `scripts/rede-sp-clp.html` por `scripts/build_rede_pdf.py`, que usa o Chrome para imprimir e recusa uma folha que passe de uma página
+- `SP-CLP-rede.pdf`: **duas folhas A4 deitadas** para entregar ao cliente. A primeira apresenta o produto, com telas reais do painel; a segunda explica a rede, o que o cliente ganha e o que precisa existir. Sai de `scripts/rede-sp-clp.html` por `scripts/build_rede_pdf.py`, que injeta os ícones, as marcas e as telas e imprime no Chrome. As telas são capturadas do painel rodando com o simulador por `scripts/capture_painel.py`
 
 A comunicação real com um CLP ainda exige teste no equipamento do cliente.
 

@@ -2,11 +2,14 @@
 
 The subject is the shape of the network, so the page is drawn once, in millimetres,
 in ``scripts/rede-sp-clp.html`` and printed by Chrome, which is the browser this
-project already measures with. Two things are injected before printing:
+project already measures with. What is injected before printing:
 
 - the glyphs, read from ``app/static/icons.js``, so an icon on paper cannot drift
   from the same icon on the screen;
-- the two logos, as data URIs, so the PDF does not depend on where it is opened.
+- the two logos and the two panel screenshots, as data URIs, so the PDF does not
+  depend on where it is opened. The screenshots come from
+  ``scripts/capture_painel.py``: they are the panel itself, running with a
+  simulated PLC, because a drawing of a screen is not the screen.
 
 Chrome is the only requirement. Point ``SP_CLP_CHROME`` at the binary when it is
 not on PATH under one of the usual names.
@@ -31,6 +34,10 @@ ICONS = ROOT / "app" / "static" / "icons.js"
 # prints sharp: the 1080 px master is three times heavier for no visible gain.
 APP_LOGO = ROOT / "app" / "static" / "assets" / "favicon_io" / "android-chrome-512x512.png"
 DEV_LOGO = ROOT / "app" / "static" / "assets" / "logo" / "logo-dev.png"
+SHOTS = {
+    "{{TV_SHOT}}": ROOT / "scripts" / "rede" / "painel-tv.png",
+    "{{CARD_SHOT}}": ROOT / "scripts" / "rede" / "painel-card.png",
+}
 
 # The names of the browser binaries worth trying, in the order they are tried.
 CHROME_NAMES = (
@@ -88,6 +95,11 @@ def render(markup: str) -> str:
     markup = re.sub(r'<svg class="icon" data-icon="([a-z0-9-]+)" viewBox="0 0 24 24"></svg>', glyph, markup)
     markup = markup.replace("{{APP_LOGO}}", data_uri(APP_LOGO))
     markup = markup.replace("{{DEV_LOGO}}", data_uri(DEV_LOGO))
+    for placeholder, path in SHOTS.items():
+        if placeholder in markup:
+            if not path.exists():
+                raise SystemExit(f"falta {path.relative_to(ROOT)}; rode scripts/capture_painel.py")
+            markup = markup.replace(placeholder, data_uri(path))
     return markup
 
 
@@ -104,7 +116,9 @@ def page_count(pdf: bytes) -> int:
 
 
 def main() -> int:
-    markup = render(SOURCE.read_text(encoding="utf-8"))
+    source = SOURCE.read_text(encoding="utf-8")
+    expected = source.count('class="page"')
+    markup = render(source)
     with tempfile.TemporaryDirectory(prefix="sp-clp-rede-") as folder:
         page = Path(folder) / "rede.html"
         page.write_text(markup, encoding="utf-8")
@@ -125,8 +139,11 @@ def main() -> int:
     pdf = OUTPUT.read_bytes()
     pages = page_count(pdf)
     print(f"{OUTPUT.name}: {pages} página(s), {len(pdf) / 1024:.0f} KB")
-    if pages != 1:
-        raise SystemExit("a folha deixou de caber em uma página")
+    if pages != expected:
+        raise SystemExit(
+            f"a folha tem {expected} seções mas o PDF saiu com {pages} páginas: "
+            "alguma coisa passou dos 210 mm e virou página nova"
+        )
     return 0
 
 

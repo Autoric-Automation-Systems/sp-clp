@@ -45,6 +45,7 @@ points it elsewhere. Python 3.11+, dependencies `fastapi`, `uvicorn[standard]`,
 | Windows executable | `scripts/build_windows.ps1` | Gerar o executavel Windows |
 | Windows installer | `scripts/sp-clp.iss` | Gerar o executavel Windows |
 | Network flyer for the customer | `scripts/rede-sp-clp.html` -> `SP-CLP-rede.pdf` | Estrutura |
+| Panel screenshots for that flyer | `scripts/capture_painel.py` -> `scripts/rede/*.png` | Estrutura |
 
 ## The PLC contract, as implemented
 

@@ -2,11 +2,13 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>SP-CLP | Estrutura de rede</title>
+<title>SP-CLP | Monitoramento de CLPs</title>
 <!--
-  Folha de uma pagina, A4 deitado, explicando a rede do SP-CLP ao cliente.
+  Folheto de duas paginas, A4 deitado: a primeira apresenta o produto, a segunda
+  explica a rede, o que o cliente ganha e o que precisa existir.
   Nao abra este arquivo direto: ele traz marcadores. Gere o PDF com
-  `python scripts/build_rede_pdf.py`, que injeta os icones do app e as logos.
+  `python scripts/build_rede_pdf.py`, que injeta os icones, as logos e as duas
+  telas do painel capturadas por `python scripts/capture_painel.py`.
 -->
 <style>
   @page { size: A4 landscape; margin: 0 }
@@ -15,11 +17,6 @@
   html, body { margin: 0; padding: 0 }
 
   body {
-    width: 297mm;
-    height: 210mm;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     color: #183247;
     background: #fff;
@@ -27,20 +24,65 @@
     print-color-adjust: exact;
   }
 
+  /* Cada folha e uma caixa fechada: o que passar dela aparece cortado, e o gerador
+     recusa um PDF com mais paginas do que secoes. */
+  .page {
+    width: 297mm;
+    height: 210mm;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+  }
+  .page:last-child { page-break-after: auto }
+
   .icon { width: 1em; height: 1em; flex: none }
   /* O nome do produto nao se parte no hifen: "SP-\nCLP" numa folha impressa. */
   .nb { white-space: nowrap }
 
-  /* Cabecalho: a marca do app de um lado, a da Autoric do outro. */
+  /* Cabecalho e rodape iguais nas duas folhas. */
   header { display: flex; align-items: center; gap: 6mm; padding: 9mm 13mm 5mm }
-  .logo-app { width: 24mm; height: 24mm; object-fit: contain }
-  .brand b { display: block; font: 700 11mm/1 Georgia, "Times New Roman", serif; color: #102a43; letter-spacing: .02em }
+  .logo-app { width: 22mm; height: 22mm; object-fit: contain }
+  .brand b { display: block; font: 700 10mm/1 Georgia, "Times New Roman", serif; color: #102a43; letter-spacing: .02em }
   .brand span { display: block; margin-top: 1.6mm; color: #0769b1; font: 700 3mm var(--sans, sans-serif); letter-spacing: .16em; text-transform: uppercase }
-  .logo-dev { height: 13mm; margin-left: auto }
+  .logo-dev { height: 12mm; margin-left: auto }
 
   .rule { height: 1.2mm; margin: 0 13mm; background: linear-gradient(90deg, #0769b1, #23c6e6) }
 
-  h1 { margin: 6mm 13mm 2mm; font: 700 6.4mm/1.15 Georgia, "Times New Roman", serif; color: #102a43 }
+  footer { margin-top: auto; display: flex; align-items: center; gap: 6mm; padding: 4.5mm 13mm; border-top: 1px solid #c8d9e2; background: #f2f8fb }
+  .slogan { font: italic 700 4.6mm Georgia, "Times New Roman", serif; color: #0769b1 }
+  /* A folha viaja por WhatsApp e o endereco e um alvo para tocar, entao os contatos
+     viram tres icones com moldura, no mesmo desenho dos links do painel. */
+  .links { display: flex; gap: 3mm; margin-top: 2.4mm }
+  .links a { display: grid; place-items: center; width: 8.5mm; height: 8.5mm; border: 1px solid #c8d9e2; border-radius: 2mm; background: #fff; color: #0769b1 }
+  .links a .icon { width: 4.4mm; height: 4.4mm }
+  .stamp { margin-left: auto; text-align: right; color: #647c8d; font-size: 3mm; line-height: 1.5 }
+  .stamp b { display: block; color: #102a43; font-size: 3.4mm }
+
+  /* ---------- Folha 1: o produto ---------- */
+  .hero { display: flex; gap: 10mm; padding: 7mm 13mm 0; flex: 1; align-items: center }
+  .pitch { flex: 1 1 52% }
+  .pitch .eyebrow { margin: 0 0 3mm; color: #0769b1; font: 700 3.2mm var(--sans, sans-serif); letter-spacing: .16em; text-transform: uppercase }
+  .pitch h1 { margin: 0 0 3mm; font: 700 11mm/1.08 Georgia, "Times New Roman", serif; color: #102a43 }
+  .pitch .lead { margin: 0; color: #4b6373; font-size: 4mm; line-height: 1.55 }
+
+  .claims { display: grid; gap: 3.6mm; margin-top: 7mm }
+  .claim { display: flex; gap: 3.4mm; align-items: flex-start }
+  .claim .icon { width: 6.4mm; height: 6.4mm; color: #23a8c6; margin-top: .2mm }
+  .claim b { display: block; font-size: 4.1mm; color: #102a43 }
+  .claim span { display: block; margin-top: .8mm; color: #647c8d; font-size: 3.4mm; line-height: 1.45 }
+
+  .scene { flex: 1 1 48%; display: flex; flex-direction: column; gap: 5mm; align-items: center }
+  .tv { width: 116mm }
+  .tv-screen { border: 3.4mm solid #16232e; border-bottom-width: 4mm; border-radius: 2.6mm; background: #0b1420; box-shadow: 0 3mm 6mm #102a4326 }
+  .tv-screen img { display: block; width: 100% }
+  .tv-neck { width: 20mm; height: 4mm; margin: 0 auto; background: #16232e }
+  .tv-base { width: 48mm; height: 2.4mm; margin: 0 auto; border-radius: 1.4mm; background: #16232e }
+  .shot-card { width: 116mm; border: 1px solid #c8d9e2; box-shadow: 0 2.4mm 5mm #102a431f }
+  .caption { margin: 0; color: #647c8d; font-size: 3mm; text-align: center }
+
+  /* ---------- Folha 2: a informacao ---------- */
+  h2 { margin: 6mm 13mm 2mm; font: 700 6.4mm/1.15 Georgia, "Times New Roman", serif; color: #102a43 }
   .lead { margin: 0 13mm; color: #647c8d; font-size: 3.6mm; line-height: 1.5 }
 
   /* A rede, da esquerda para a direita: CLP, rede da fabrica, painel, navegador. */
@@ -59,7 +101,7 @@
   /* Duas colunas: o que se ganha e o que precisa existir. */
   .grid { display: flex; gap: 8mm; margin: 7mm 13mm 0 }
   .col { flex: 1 }
-  .col h2 { margin: 0 0 3mm; font: 700 3.2mm var(--sans, sans-serif); letter-spacing: .14em; text-transform: uppercase; color: #0769b1 }
+  .col h4 { margin: 0 0 3mm; font: 700 3.2mm var(--sans, sans-serif); letter-spacing: .14em; text-transform: uppercase; color: #0769b1 }
 
   .gains { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm 5mm }
   .gain { display: flex; gap: 2.6mm }
@@ -71,119 +113,174 @@
   .needs li { display: flex; gap: 2.4mm; margin-bottom: 2.8mm; color: #40586a; font-size: 3.2mm; line-height: 1.45 }
   .needs .icon { width: 4.4mm; height: 4.4mm; color: #0f9d58; margin-top: .5mm }
   .needs b { color: #102a43 }
-
-  /* Faixa do rodape, no mesmo espirito da do modo TV. */
-  footer { margin-top: auto; display: flex; align-items: center; gap: 6mm; padding: 5mm 13mm; border-top: 1px solid #c8d9e2; background: #f2f8fb }
-  .slogan { font: italic 700 5mm Georgia, "Times New Roman", serif; color: #0769b1 }
-  /* A folha viaja por WhatsApp e o endereco e um alvo para tocar, entao viram tres
-     icones com moldura, no mesmo desenho dos links do painel. */
-  .links { display: flex; gap: 3mm; margin-top: 2.6mm }
-  .links a { display: grid; place-items: center; width: 8.5mm; height: 8.5mm; border: 1px solid #c8d9e2; border-radius: 2mm; background: #fff; color: #0769b1 }
-  .links a .icon { width: 4.4mm; height: 4.4mm }
-  .stamp { margin-left: auto; text-align: right; color: #647c8d; font-size: 3mm; line-height: 1.5 }
-  .stamp b { display: block; color: #102a43; font-size: 3.4mm }
 </style>
 </head>
 <body>
 
-<header>
-  <img class="logo-app" src="{{APP_LOGO}}" alt="SP-CLP">
-  <div class="brand">
-    <b>SP-CLP</b>
-    <span>Monitoramento local de CLPs</span>
-  </div>
-  <img class="logo-dev" src="{{DEV_LOGO}}" alt="Autoric Automação e Sistemas">
-</header>
+<section class="page">
+  <header>
+    <img class="logo-app" src="{{APP_LOGO}}" alt="SP-CLP">
+    <div class="brand">
+      <b>SP-CLP</b>
+      <span>Monitoramento local de CLPs</span>
+    </div>
+    <img class="logo-dev" src="{{DEV_LOGO}}" alt="Autoric Automação e Sistemas">
+  </header>
 
-<div class="rule"></div>
+  <div class="rule"></div>
 
-<h1>Como o <span class="nb">SP-CLP</span> entra na sua rede</h1>
-<p class="lead">Um computador dentro da fábrica conversa com os CLPs e publica o painel na rede local.
-Qualquer aparelho da planta abre o painel no navegador. Nada sai da fábrica e nada é instalado nos aparelhos.</p>
+  <div class="hero">
+    <div class="pitch">
+      <p class="eyebrow">Painel de monitoramento industrial</p>
+      <h1>Toda a produção, na tela da sala.</h1>
+      <p class="lead">O <span class="nb">SP-CLP</span> conversa com os CLPs que já estão na sua planta e publica um
+        painel no navegador: a TV da parede, o computador da sala e o celular do supervisor leem a mesma informação,
+        sem instalar nada em nenhum deles.</p>
 
-<div class="flow">
-  <div class="node">
-    <svg class="icon" data-icon="cpu" viewBox="0 0 24 24"></svg>
-    <h3>CLPs na planta</h3>
-    <p>CLP com o bloco do <span class="nb">SP-CLP</span><br>Uma máquina por DB, assinatura <b>SPCLP</b></p>
-  </div>
-  <div class="hop">
-    <svg class="icon" data-icon="arrow-right" viewBox="0 0 24 24"></svg>
-    <span>porta 102</span>
-  </div>
-  <div class="node">
-    <svg class="icon" data-icon="wifi" viewBox="0 0 24 24"></svg>
-    <h3>Rede da fábrica</h3>
-    <p>Cabo e switch da própria planta<br>Painel e CLPs na <b>mesma rede</b></p>
-  </div>
-  <div class="hop">
-    <svg class="icon" data-icon="arrow-right" viewBox="0 0 24 24"></svg>
-    <span>rede local</span>
-  </div>
-  <div class="node">
-    <svg class="icon" data-icon="server" viewBox="0 0 24 24"></svg>
-    <h3>Computador do painel</h3>
-    <p>Windows, um executável só<br>Lê os CLPs e <b>grava o histórico</b></p>
-  </div>
-  <div class="hop">
-    <svg class="icon" data-icon="arrow-right" viewBox="0 0 24 24"></svg>
-    <span>http://sp-clp</span>
-  </div>
-  <div class="node">
-    <svg class="icon" data-icon="log-in" viewBox="0 0 24 24"></svg>
-    <h3>Navegador de quem precisa</h3>
-    <p>Celular, tablet, notebook, TV<br><b>Nada para instalar</b></p>
-  </div>
-</div>
-
-<div class="grid">
-  <div class="col">
-    <h2>O que o cliente ganha</h2>
-    <div class="gains">
-      <div class="gain">
-        <svg class="icon" data-icon="shield-check" viewBox="0 0 24 24"></svg>
-        <div><b>Somente leitura</b><span>O painel lê o CLP e nunca escreve nele.</span></div>
-      </div>
-      <div class="gain">
-        <svg class="icon" data-icon="refresh-cw" viewBox="0 0 24 24"></svg>
-        <div><b>Grava sem ninguém</b><span>Histórico de 7 dias mesmo com o navegador fechado.</span></div>
-      </div>
-      <div class="gain">
-        <svg class="icon" data-icon="tv" viewBox="0 0 24 24"></svg>
-        <div><b>Modo TV</b><span>Uma máquina por vez, para o monitor da parede.</span></div>
-      </div>
-      <div class="gain">
-        <svg class="icon" data-icon="lock" viewBox="0 0 24 24"></svg>
-        <div><b>Senha só no cadastro</b><span>Monitorar é livre; configurar exige senha.</span></div>
+      <div class="claims">
+        <div class="claim">
+          <svg class="icon" data-icon="tag" viewBox="0 0 24 24"></svg>
+          <div><b>Licença de uso gratuita</b><span>O software é gratuito: sem mensalidade, sem taxa por máquina e sem contrato de nuvem.</span></div>
+        </div>
+        <div class="claim">
+          <svg class="icon" data-icon="settings" viewBox="0 0 24 24"></svg>
+          <div><b>Instalação pelo seu técnico</b><span>O procedimento foi feito para o técnico capacitado da indústria executar, sem visita técnica.</span></div>
+        </div>
+        <div class="claim">
+          <svg class="icon" data-icon="power" viewBox="0 0 24 24"></svg>
+          <div><b>Pronto para uso</b><span>Instale, informe o endereço do CLP e o painel começa a mostrar a produção.</span></div>
+        </div>
       </div>
     </div>
-  </div>
-  <div class="col">
-    <h2>Para funcionar, basta</h2>
-    <ul class="needs">
-      <li><svg class="icon" data-icon="circle-check" viewBox="0 0 24 24"></svg><span><b>Porta 102</b> liberada entre o painel e cada CLP, em qualquer firewall do caminho.</span></li>
-      <li><svg class="icon" data-icon="circle-check" viewBox="0 0 24 24"></svg><span>Painel e CLPs <b>na mesma rede</b>, com rota entre eles. Cabo e switch são o caminho mais estável.</span></li>
-      <li><svg class="icon" data-icon="circle-check" viewBox="0 0 24 24"></svg><span>Um endereço fácil de guardar: <b>http://sp-clp</b> na porta 80, ou <b>http://nome-do-pc:8000</b>.</span></li>
-      <li><svg class="icon" data-icon="circle-check" viewBox="0 0 24 24"></svg><span><b>Sem internet, sem nuvem, sem servidor externo:</b> tudo roda dentro da fábrica.</span></li>
-    </ul>
-  </div>
-</div>
 
-<footer>
-  <div>
-    <p class="slogan">Você imagina, nós fazemos funcionar</p>
-    <p class="links">
-      <a href="https://www.autoric.com.br" title="Site da Autoric"><svg class="icon" data-icon="link" viewBox="0 0 24 24"></svg></a>
-      <a href="https://www.instagram.com/autoricbr/" title="Instagram @autoricbr"><svg class="icon" data-icon="instagram" viewBox="0 0 24 24"></svg></a>
-      <a href="https://github.com/Autoric-Automation-Systems/sp-clp" title="GitHub: Autoric-Automation-Systems/sp-clp"><svg class="icon" data-icon="github" viewBox="0 0 24 24"></svg></a>
-    </p>
+    <div class="scene">
+      <div class="tv">
+        <div class="tv-screen"><img src="{{TV_SHOT}}" alt="Painel no modo TV"></div>
+        <div class="tv-neck"></div>
+        <div class="tv-base"></div>
+      </div>
+      <img class="shot-card" src="{{CARD_SHOT}}" alt="Card de uma máquina no painel">
+      <p class="caption">Telas reais do painel, em demonstração com o simulador embutido.</p>
+    </div>
   </div>
-  <div class="stamp">
-    <b>SP-CLP</b>
-    Autoric Automação e Sistemas<br>
-    Estrutura de rede · 1 página
+
+  <footer>
+    <div>
+      <p class="slogan">Você imagina, nós fazemos funcionar</p>
+      <p class="links">
+        <a href="https://www.autoric.com.br" title="Site da Autoric"><svg class="icon" data-icon="link" viewBox="0 0 24 24"></svg></a>
+        <a href="https://www.instagram.com/autoricbr/" title="Instagram @autoricbr"><svg class="icon" data-icon="instagram" viewBox="0 0 24 24"></svg></a>
+        <a href="https://github.com/Autoric-Automation-Systems/sp-clp" title="GitHub: Autoric-Automation-Systems/sp-clp"><svg class="icon" data-icon="github" viewBox="0 0 24 24"></svg></a>
+      </p>
+    </div>
+    <div class="stamp">
+      <b>SP-CLP</b>
+      Autoric Automação e Sistemas<br>
+      Página 1 de 2
+    </div>
+  </footer>
+</section>
+
+<section class="page">
+  <header>
+    <img class="logo-app" src="{{APP_LOGO}}" alt="SP-CLP">
+    <div class="brand">
+      <b>SP-CLP</b>
+      <span>Monitoramento local de CLPs</span>
+    </div>
+    <img class="logo-dev" src="{{DEV_LOGO}}" alt="Autoric Automação e Sistemas">
+  </header>
+
+  <div class="rule"></div>
+
+  <h2>Como o <span class="nb">SP-CLP</span> entra na sua rede</h2>
+  <p class="lead">Um computador dentro da fábrica conversa com os CLPs e publica o painel na rede local.
+    Qualquer aparelho da planta abre o painel no navegador. Nada sai da fábrica e nada é instalado nos aparelhos.</p>
+
+  <div class="flow">
+    <div class="node">
+      <svg class="icon" data-icon="cpu" viewBox="0 0 24 24"></svg>
+      <h3>CLPs na planta</h3>
+      <p>CLP com o bloco do <span class="nb">SP-CLP</span><br>Uma máquina por DB, assinatura <b>SPCLP</b></p>
+    </div>
+    <div class="hop">
+      <svg class="icon" data-icon="arrow-right" viewBox="0 0 24 24"></svg>
+      <span>porta 102</span>
+    </div>
+    <div class="node">
+      <svg class="icon" data-icon="wifi" viewBox="0 0 24 24"></svg>
+      <h3>Rede da fábrica</h3>
+      <p>Cabo e switch da própria planta<br>Painel e CLPs na <b>mesma rede</b></p>
+    </div>
+    <div class="hop">
+      <svg class="icon" data-icon="arrow-right" viewBox="0 0 24 24"></svg>
+      <span>rede local</span>
+    </div>
+    <div class="node">
+      <svg class="icon" data-icon="server" viewBox="0 0 24 24"></svg>
+      <h3>Computador do painel</h3>
+      <p>Windows, um executável só<br>Lê os CLPs e <b>grava o histórico</b></p>
+    </div>
+    <div class="hop">
+      <svg class="icon" data-icon="arrow-right" viewBox="0 0 24 24"></svg>
+      <span>http://sp-clp</span>
+    </div>
+    <div class="node">
+      <svg class="icon" data-icon="log-in" viewBox="0 0 24 24"></svg>
+      <h3>Navegador de quem precisa</h3>
+      <p>Celular, tablet, notebook, TV<br><b>Nada para instalar</b></p>
+    </div>
   </div>
-</footer>
+
+  <div class="grid">
+    <div class="col">
+      <h4>O que o cliente ganha</h4>
+      <div class="gains">
+        <div class="gain">
+          <svg class="icon" data-icon="shield-check" viewBox="0 0 24 24"></svg>
+          <div><b>Somente leitura</b><span>O painel lê o CLP e nunca escreve nele.</span></div>
+        </div>
+        <div class="gain">
+          <svg class="icon" data-icon="refresh-cw" viewBox="0 0 24 24"></svg>
+          <div><b>Grava sem ninguém</b><span>Histórico de 7 dias mesmo com o navegador fechado.</span></div>
+        </div>
+        <div class="gain">
+          <svg class="icon" data-icon="tv" viewBox="0 0 24 24"></svg>
+          <div><b>Modo TV</b><span>Uma máquina por vez, para o monitor da parede.</span></div>
+        </div>
+        <div class="gain">
+          <svg class="icon" data-icon="lock" viewBox="0 0 24 24"></svg>
+          <div><b>Senha só no cadastro</b><span>Monitorar é livre; configurar exige senha.</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <h4>Para funcionar, basta</h4>
+      <ul class="needs">
+        <li><svg class="icon" data-icon="circle-check" viewBox="0 0 24 24"></svg><span><b>Porta 102</b> liberada entre o painel e cada CLP, em qualquer firewall do caminho.</span></li>
+        <li><svg class="icon" data-icon="circle-check" viewBox="0 0 24 24"></svg><span>Painel e CLPs <b>na mesma rede</b>, com rota entre eles. Cabo e switch são o caminho mais estável.</span></li>
+        <li><svg class="icon" data-icon="circle-check" viewBox="0 0 24 24"></svg><span>Um endereço fácil de guardar: <b>http://sp-clp</b> na porta 80, ou <b>http://nome-do-pc:8000</b>.</span></li>
+        <li><svg class="icon" data-icon="circle-check" viewBox="0 0 24 24"></svg><span><b>Sem internet, sem nuvem, sem servidor externo:</b> tudo roda dentro da fábrica.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    <div>
+      <p class="slogan">Você imagina, nós fazemos funcionar</p>
+      <p class="links">
+        <a href="https://www.autoric.com.br" title="Site da Autoric"><svg class="icon" data-icon="link" viewBox="0 0 24 24"></svg></a>
+        <a href="https://www.instagram.com/autoricbr/" title="Instagram @autoricbr"><svg class="icon" data-icon="instagram" viewBox="0 0 24 24"></svg></a>
+        <a href="https://github.com/Autoric-Automation-Systems/sp-clp" title="GitHub: Autoric-Automation-Systems/sp-clp"><svg class="icon" data-icon="github" viewBox="0 0 24 24"></svg></a>
+      </p>
+    </div>
+    <div class="stamp">
+      <b>SP-CLP</b>
+      Autoric Automação e Sistemas<br>
+      Página 2 de 2
+    </div>
+  </footer>
+</section>
 
 </body>
 </html>
