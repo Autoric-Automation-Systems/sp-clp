@@ -20,9 +20,10 @@ points it elsewhere. Python 3.11+, dependencies `fastapi`, `uvicorn[standard]`,
   Portuguese, for the customer. It is the contract: when behaviour changes, the
   matching section changes in the same commit.
 - **`.github/agents/s7-dashboard-engineer.agent.md`** - product scope, engineering
-  rules and boundaries. The user owns this file: edit it when the user asks, and
-  commit it only when the user asks. Its PLC contract has to stay identical to the
-  one implemented below.
+  rules and boundaries. The user owns the wording: change it when the user asks. It
+  is versioned like every other file, because a repository that keeps an old copy
+  hands the next reader the wrong PLC contract. Commit it with the edit that changed
+  it, and keep its contract identical to the one implemented below.
 - **`tests/test_core.py`** - the behaviour that must not regress. 163 tests, none
   of them needs hardware.
 
@@ -111,8 +112,8 @@ question for the customer, not a change to make on the spot.
 - Commit messages: imperative English subject that says what changed, then a body
   that explains why the decision was taken and what was rejected. One concern per
   commit.
-- Never commit `data/`, `dist/`, `build/`, `*.spec`, `.venv/`. The mode file
-  `.github/agents/*.agent.md` belongs to the user: commit it only when the user asks.
+- Never commit `data/` (it holds the password hash, the customer's registry and the
+  logo), `dist/`, `build/`, `*.spec`, `.venv/`.
 - Keep the module boundaries above. A change that needs a new module needs a
   reason, not a new folder.
 
