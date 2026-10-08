@@ -177,6 +177,11 @@ is not proof: a field carrying `hidden` was painted anyway, and only the compute
 `scripts/build_windows.ps1` is the packaging smoke check and needs Windows. The
 `--collect-all tzdata` flag in it has never been confirmed in a real build.
 
+**Last, look at where the work stands.** `git status -sb` tells whether the branch is
+ahead of `origin/main`; while it is, the repository is missing those commits and
+nobody else can see them. Twice now that went unnoticed for days, once for 62
+commits. Say it in the report, and push when the user asks.
+
 ## Environment
 
 - `.venv` in the repository root; `python -m pip install -e ".[test]"`.
